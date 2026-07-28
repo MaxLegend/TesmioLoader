@@ -3,10 +3,20 @@
 Deposit types are **not** resources. They are a separate, much smaller enum, and
 adding one is the only thing in this project that required patching code.
 
-Nothing about any individual deposit is compiled into the loader. `deposits.ini`
-declares them and one registry drives all three subsystems — the code patch, the
-minimap layer and the editor brush. **Adding a deposit is adding a section**;
-see [Adding one](#adding-one) below.
+**A plugin**: `plugins/deposits/deposits.cpp` builds to
+`build/plugins/deposits.dll`, and deleting that DLL removes mod deposits — and
+with them the registry other plugins read. See [09-plugins.md](09-plugins.md).
+
+Nothing about any individual deposit is compiled in. `deposits.ini`, in the
+loader's own folder, declares them and one registry drives all three subsystems
+— the code patch, the minimap layer and the editor brush. **Adding a deposit is
+adding a section**; see [Adding one](#adding-one) below. `plugins/deposits.ini`
+holds only the three switches that say which of those subsystems may touch the
+game.
+
+That registry is also published as a service, `TSM_SERVICE_DEPOSITS`, so another
+plugin can read what was declared and carry its own per-deposit keys in the same
+file. `depletion` does both.
 
 ## How the game stores deposits
 
@@ -71,10 +81,10 @@ comparisons compiled into a 3734-byte function at rva `0x1DD190`:
 
 | Type | Texture | Component |
 |---|---|---|
-| 0 | local | 0 |
-| 1 `IRON` | local | 1 |
-| 2 `COAL` | local | 2 |
-| 3 `GRAVEL` | terrain | 2 |
+| 0 `OIL` | `resourcemap`, by passing the sampler a null texture | 0 |
+| 1 `IRON` | `resourcemap`, same way | 1 |
+| 2 `COAL` | `resourcemap`, same way | 2 |
+| 3 `GRAVEL` | the terrain's material mask at `[terrain+0x158]` | 2 |
 | 6 `URANIUM` | `resourcemap2` | 0 |
 | 7 `BAUXITE` | `resourcemap2` | 1 |
 | 8, 9 water | separate path | — |
@@ -141,7 +151,7 @@ corrupted process rather than a wrong colour. Rejections say why:
 
 ## The patch
 
-`PatchDepositType` in `src/tesmioloader.cpp`, enabled by `deposit_patch = 1`.
+`PatchDepositType` in `plugins/deposits/deposits.cpp`, enabled by `code_patch = 1`.
 Three sites, one cave, and the cave is emitted in a loop over the registry —
 one case per declared deposit, chained by `rel32` forward branches, then the
 displaced vanilla check reproduced at the end of each chain.
@@ -237,7 +247,7 @@ around `gui_minimap_bauxit`:
 Both are hooked additively — the original runs first through a trampoline, then
 one button per mod layer and, for whichever is selected, its overlay pass are
 appended. Buttons take row slots 5, 6, 7… in registry order.
-`InstallMinimapPatch` in `src/tesmioloader.cpp`, enabled by `minimap_patch = 1`;
+`InstallMinimapPatch` in `plugins/deposits/deposits.cpp`, enabled by `minimap = 1`;
 it does not hook at all if no section declares a layer.
 
 ### The state struct
@@ -332,7 +342,7 @@ gain.
 
 Done, and like the minimap it needed **no code patch** — the machinery was
 already generic and three of its eight channels simply had no caller.
-`InstallEditorPatch` in `src/tesmioloader.cpp`, enabled by `editor_patch = 1`.
+`InstallEditorPatch` in `plugins/deposits/deposits.cpp`, enabled by `editor = 1`.
 Four additive inline hooks and two PNGs per brush in the VFS; it does not hook
 at all if no section declares one.
 

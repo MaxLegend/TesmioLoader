@@ -388,3 +388,66 @@ That is how a mod layer stayed selected into the terrain editor, where
 null pointer. Anything the loader keeps outside a game structure has to assume
 the world underneath it can vanish: check the pointers, do not trust that a
 flag set in one context is still meaningful in another.
+
+## `TextureAccessOpen` is a D3D11 Map, not a lock
+
+The first version of the depletion plugin resampled each mine from the mine
+tick by calling the game's own deposit scan at `0x1DD190`, on the reasoning that
+the water branch of that same tick function already does exactly that.
+
+**Building a coal mine crashed the NVIDIA driver**, at the first tick after the
+mine appeared:
+
+```
+deplete  coal mine at (-2302, 3486): 1369 sample points, ~429 texels, quality 0.086
+=== CRASH: ACCESS_VIOLATION at 00007FFEA5F4776B ===
+    nvwgf2umx.dll + 0x2C776B
+    reading address 0000000000000010
+    --- return addresses on the stack ---
+```
+
+Two things in that report point the same way. The fault is inside the graphics
+driver, not the game — and the stack walk found **no return address into
+`SOVIET64.exe` at all**, so the thread that died was not the one running our
+code.
+
+`C3DAPI_D3D11_TEXTURE::TextureAccessOpen` reads like a lock and is not one.
+Disassembled straight out of `C3DDLL64.dll` at export rva `0x18D40`:
+
+```asm
+mov  rcx,[rip+...]         ; the ID3D11Device
+call qword ptr [rax+0x28]  ; vtbl slot 5  - CreateTexture2D, USAGE_STAGING, CPU rw
+call qword ptr [rax+0x178] ; slot 47      - CopyResource, GPU texture -> staging
+call qword ptr [r10+0x70]  ; slot 14      - ID3D11DeviceContext::Map
+```
+
+and `TextureAccessClose` is `Unmap` plus the `CopyResource` back. That is the
+**immediate context**: not thread-safe, and it moves the whole 4 MB map across
+the bus in both directions on every open/close pair.
+
+The base game never does this from a building tick. Every caller of `0x1DD190`
+that maps a texture is a main-thread path — building placement at `0x2BAD70`
+and `0x7ABBD0`, the terrain editor at `0x30D100`. The one tick-side caller is
+the water branch, and water is deposit type 8 or 9, which is **excluded from
+both of that function's texture guards** (`type < 3` and `type - 6 < 2`). Water
+is precisely the one deposit type that touches no texture at all, which is why
+it is safe to resample from a tick — and taking it as a template copied the
+shape while missing the only thing that made it work.
+
+Three lessons, in order of how much they generalise:
+
+- **An engine function named like a lock can be a GPU call.** Read the export
+  before calling it from anywhere the game does not. `tools/pe/exports.py`
+  disassembles one by name in a second; it does not need Ghidra.
+- **When copying a code path as a template, work out what makes that path
+  legal**, not just what it does. Here the answer was a type number two
+  comparisons away.
+- **An empty stack walk in a crash report is information.** It means the
+  faulting thread has no game frames, which for a fault inside a driver module
+  means the damage was done somewhere else and earlier.
+
+The fix was to split the plugin in two: the tick does arithmetic only, and
+everything that maps the deposit map runs from an import hook on
+`C3D_TERRAIN::Render` — unambiguously the render thread — rate-limited so one
+Map/Unmap pair covers every mine at once. See
+[08-depletion.md](08-depletion.md).

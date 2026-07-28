@@ -222,17 +222,19 @@ Compiled as a chain of comparisons inside a 3734-byte function at rva
 
 | Type | Texture | Colour component |
 |---|---|---|
-| 0 | local (unresolved) | 0 |
-| 1 | local | 1 |
-| 2 | local | 2 |
-| 3 | terrain | 2 |
+| 0 | `resourcemap` — the sampler's default, reached by passing `R9 = 0` | 0 |
+| 1 | `resourcemap`, same way | 1 |
+| 2 | `resourcemap`, same way | 2 |
+| 3 | **terrain mask**, `[terrain+0x158]` — the material splat map `C3D_TERRAIN::EditMask` paints, bracketed by `MaskTextureOpen`/`Close` | 2 |
 | 6 | `resourcemap2` | 0 |
 | 7 | `resourcemap2` | 1 |
 | 8, 9 | water — separate path via `FUN_1404D5B60` | — |
 | 10 | `resourcemap2` | 3 — added by this project |
 
-Types 6 and 7 load the texture explicitly from `[gameobj+0xF08]`. Types 0–2 take
-it from a local this analysis did not trace back.
+Types 6 and 7 load the texture explicitly from `[gameobj+0xF08]`. Types 0–2 pass
+`R9 = 0` and let the sampler fall back to `[gameobj+0xF00]` — an earlier reading
+of the decompiler's "local" here was wrong; the disassembly at `0x1DD6E1` is a
+plain `XOR R9D,R9D`.
 
 ### Sampler
 
@@ -256,6 +258,31 @@ Defaults `tex` to `[gameobj+0xF00]` when null. Converts world position through
 | `0x10E200` | `building.ini` parser, 62 979 bytes; mine-type branches from `0x10EAC8` |
 | `0x1DCA70` | deposit type → **search radius**, 111 bytes, returns in `XMM0` |
 | `0x1DD190` | the big one, 3734 bytes: finds deposits under a building. **Fifteen** comparisons against the type field, not just the dispatch chain |
+| `0x1B3690` | **one mine, one tick** — building type 7. Reached from the dispatcher at `0x139A80` |
+| `0x1B1220` | the same for building type 92, the water well, via `0x188FC0` |
+| `0x139A80` | the building dispatcher, 20 964 bytes: one `if (typeDesc[0x360] == n)` per building type |
+
+### What a mine keeps
+
+`0x1DD190` writes a `std::vector` of **28-byte** sample points into
+`building+0xE90` (`end` at `+0xE98`):
+
+| Offset | Field |
+|---|---|
+| `+0x00` `+0x04` `+0x08` | world x, y, z |
+| `+0x0C` | richness — the sampled colour component |
+| `+0x10` | weight, `1 - distance / radius` |
+| `+0x14` | per-point progress; wood only, zero for everything else |
+| `+0x18` | distance from the building |
+
+Quality of source is `sum(w*r)/sum(w)` over it, kept in `building+0xDF8`, and
+production is `building+0xDDC = workers × quality × max`. **`+0xDF8` is written
+once at construction and never again for an ore mine** — which is exactly why
+deposits are infinite in the base game, and the whole opening for
+[08-depletion.md](08-depletion.md).
+
+`0x1DD190` opens with `vec.clear()`, so calling it a second time is a resample.
+The water branch of both tick functions already does that every 50 seconds.
 
 ### Search radius
 
@@ -345,6 +372,49 @@ with `if (2 < idx) idx++` then `idx + 1`, which can emit 1, 2, 3, 5, 6 and
 never 0, 4 or 7. Those three are not missing a capability, they are missing a
 caller. See [05-deposits.md](05-deposits.md) for the editor side.
 
+## Building information panels
+
+The window that opens on a building is built by a family of functions in the
+`0x78xxxx`–`0x7Axxxx` range, one per kind of panel. They share a shape worth
+knowing, because it makes any of them extensible from a post-hook.
+
+| RVA | Panel |
+|---|---|
+| `0x786AC0` | the mine: **Quality of source**, **Current production per workday** |
+| `0x789E10` | transport: **Amount of material transported per second** |
+| `0x79DF00` | a third, not examined |
+
+`FUN_140786ac0(game, window, ...)`:
+
+| Window offset | Contents |
+|---|---|
+| `+0x01` | non-zero while the panel is not drawn; the builder returns immediately |
+| `+0x04`, `+0x08` | panel position |
+| `+0x28`, `+0x2C` | panel offset |
+| `+0x240` | the building the window is about |
+| `+0x250` | **the running Y, written at the very end — the panel's bottom edge** |
+
+Layout is a fixed X and a running Y, both ordinary locals:
+
+```c
+x = DPI*[0x90ABB0] + (window[0x04] - DPI*[0x90A8E4] + window[0x28] + DPI*[0x90A9E4]);
+y = DPI*[0x90AA08] + window[0x08] + window[0x2C];    // first row
+y += DPI*[0x90A9E4];                                 // 35, one row
+```
+
+with `DPI` at `0x992088`. A row is
+`C3D_LANGUAGE::GetString(&[0x997590], id)` for the label and
+`C3D_FONTMANAGER::PrintLeftUnicode(&[0x996FB0], [0x995220], x, y, 0xFF990000,
+L"%ls: ", text)` to draw it; the value is printed again at `x + labelWidth`,
+measured through the font's own vtable slot 5.
+
+**`+0x250` is what makes a row appendable**: read it in a post-hook, draw there,
+write back `y + DPI*35`, and the window grows to fit. Used by the depletion
+plugin — see [08-depletion.md](08-depletion.md).
+
+Label ids resolve through `tools/assets/btf.py`: `0xC82` "Quality of source",
+`0xC83` "Current production per workday", `0x223` "Water quality".
+
 ## The terrain editor
 
 Tools are identified by **name string**, not by an enum. The active tool is a
@@ -421,6 +491,24 @@ exported symbol, so the whole table reads out by name.
 | 36 | `+0x120` | `SaveToDDS(path)` |
 
 `TextureAccesSetTexel` is the obvious route to painting deposits at runtime.
+
+**`TextureAccessOpen` is a D3D11 Map, not a lock.** Disassembled at
+`C3DDLL64.dll` export rva `0x18D40`:
+
+```asm
+call [rax+0x28]    ; ID3D11Device::CreateTexture2D   USAGE_STAGING, CPU read|write
+call [rax+0x178]   ; ID3D11DeviceContext::CopyResource   GPU texture -> staging
+call [r10+0x70]    ; ID3D11DeviceContext::Map
+```
+
+and `TextureAccessClose` (`0x18FC0`) is `Unmap` plus the `CopyResource` back.
+So an open/close pair moves the whole 4 MB map across the bus twice and uses the
+**immediate context**, which is not thread-safe. Nothing may bracket a texel
+read or write from anywhere but the render thread, and it should be done once
+for as much work as possible. The staging texture is created once and cached at
+`tex+0x168`, guarded by the byte at `tex+0x170`.
+
+This cost a driver crash — see [07-pitfalls.md](07-pitfalls.md).
 
 ## The built-in script VM
 
@@ -541,6 +629,24 @@ The engine also ships a full frame profiler (`FrameProfiler_StartFrame` /
 `EndFrame` / `StartSection`) and debug drawing (`DebugDrawBox`, `DebugDrawLine`,
 `DebugDrawTerrainCollisionNodes`) — and the game calls into them, so those code
 paths exist in the shipped build.
+
+## Constants worth having by value
+
+Read with `tools/pe/rdata.py`; every one of these shows up as a bare `DAT_` in
+the decompiler.
+
+| RVA | Value | What |
+|---|---|---|
+| `0x909B14` | 0.001 | the argument every `PowerTime` call in the simulation passes |
+| `0x90AA90` | 60 | what a production rate is divided by per tick |
+| `0x909F70` | 1.0 | the one-second rollover, and the general-purpose 1 |
+| `0x90A840` | 10 | deposit sample grid step, world units |
+| `0x90AD50` | 210 | search radius for iron, coal and uranium |
+| `0x90AA40` | 50 | bauxite radius — and the water re-scan period |
+| `0x90A9B8` / `0x90ABFC` / `0x90ADD0` | 30 / 130 / 250 | gravel, oil, wood radius |
+| `0x90AC9C` / `0x90AC38` | 170 / 25 | water, water surface radius |
+| `0x909E6C` | 0.7 | how close another mine has to be to claim a sample point |
+| `0x9D4EE0` | — | the `C3D_TIMER` the whole simulation steps on, inline in `.data` |
 
 ## State
 

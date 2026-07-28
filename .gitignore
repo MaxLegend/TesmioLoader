@@ -1,1 +1,8 @@
 # Ignore Files
+ghidra/proj/
+build/*.obj
+build/*.log
+build/plugins/*.obj
+build/plugins/*.lib
+build/plugins/*.exp
+build/plugins/*.pdb

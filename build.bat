@@ -23,6 +23,24 @@ cl /nologo /O2 /MT /W3 /EHsc ^
    src\tesmiolauncher.cpp /link kernel32.lib
 if errorlevel 1 ( echo [build] tesmiolauncher.exe FAILED & exit /b 1 )
 
+rem Plugins. One folder per plugin under plugins\, each holding <name>.cpp and
+rem optionally <name>.ini; both land in build\plugins\, which is what the loader
+rem scans. Adding a plugin is adding a folder - nothing here lists them.
+if not exist build\plugins mkdir build\plugins
+
+for /d %%P in (plugins\*) do (
+    if exist "%%P\%%~nxP.cpp" (
+        echo [build] plugins\%%~nxP.dll
+        cl /nologo /O2 /MT /W3 /EHsc /LD ^
+           /Fo"build\plugins\\" /Fd"build\plugins\\" /Fe"build\plugins\%%~nxP.dll" ^
+           "%%P\%%~nxP.cpp" /link kernel32.lib
+        if errorlevel 1 ( echo [build] plugins\%%~nxP.dll FAILED & exit /b 1 )
+        if exist "%%P\%%~nxP.ini" copy /y "%%P\%%~nxP.ini" "build\plugins\%%~nxP.ini" >nul
+    ) else (
+        echo [build] plugins\%%~nxP: no %%~nxP.cpp, skipped
+    )
+)
+
 copy /y tesmioloader.ini build\tesmioloader.ini >nul
 if exist resources.ini copy /y resources.ini build\resources.ini >nul
 if exist deposits.ini copy /y deposits.ini build\deposits.ini >nul

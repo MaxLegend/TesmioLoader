@@ -1,429 +1,457 @@
-[10:32:27.366] tesmioloader phase B
-[10:32:27.366] exe base  00007FF6686F0000    engine base 00007FFE695D0000
-[10:32:27.366] vfs root  A:\SteamLibrary\steamapps\common\SovietRepublic\tesmioloader\build\vfs (on)
-[10:32:27.366] res hook  mode=2 rva=0x2AA7C0
-[10:32:27.366] ---
-[10:32:27.366] hook ok      ReadFileIntoBuffer     orig=00007FFE696479B0
-[10:32:27.366] hook ok      CheckIfFileExist       orig=00007FFE69647B80
-[10:32:27.366] hook ok      C3DLog_PrintInfo       orig=00007FFE6966C700
-[10:32:27.366] hook ok      C3DLog_PrintWarning    orig=00007FFE6966C7F0
-[10:32:27.366] hook ok      C3DLog_PrintError      orig=00007FFE6966C8E0
-[10:32:27.366] hook ok      C3D_LANGUAGE::GetString orig=00007FFE69667F10
-[10:32:27.366] hook ok      fopen                  orig=00007FFEBFFE55D0
-[10:32:27.366] hook ok      fopen_s                orig=00007FFEBFFE55F0
-[10:32:27.366] hook ok      _wfopen                orig=00007FFEBFFE5550
-[10:32:27.366] hook ok      _wfopen_s              orig=00007FFEBFFE5570
-[10:32:27.366] hook ok      fread                  orig=00007FFEBFF87ED0
-[10:32:27.366] hook ok      engine fopen           orig=00007FFEBFFE55D0
-[10:32:27.366] hook ok      engine fopen_s         orig=00007FFEBFFE55F0
-[10:32:27.366] hook ok      engine _wfopen         orig=00007FFEBFFE5550
-[10:32:27.366] hook ok      engine fread           orig=00007FFEBFF87ED0
-[10:32:27.366] hook ok      engine CreateFileA     orig=00007FFEC1D04E90
-[10:32:27.366] hook ok      engine CreateFile2     orig=00007FFEC1D04E80
-[10:32:27.366] hook ok      CreateFileW            orig=00007FFEC1D04EA0
-[10:32:27.366] registry  "copper_ore" -> next free slot, template 18, text id 1000000
-[10:32:27.366] registry  "copper_concentrate" -> next free slot, template 19, text id 1000001
-[10:32:27.366] registry  "raw_copper" -> next free slot, template 8, text id 1000002
-[10:32:27.366] registry  "copper" -> next free slot, template 9, text id 1000003
-[10:32:27.366] registry  "copper2" -> next free slot, template 14, text id 1000004
-[10:32:27.366] hook ok      ResourceGet            target=00007FF66899A7C0 tramp=000002E7C8AF0000 (20 bytes stolen)
-[10:32:27.366] texel  vtable hooked: Load2DFromFile=00007FFE695E79F0 GetTexel=00007FFE695E9080
-[10:32:27.366] deposits  "copper" type 10 "$TYPE_MINE_COPPER" -> resourcemap2 component 3, radius from the game, editor channel 4 (slot 5, column 5)
-[10:32:27.366] patch  deposit type 10 added: "$TYPE_MINE_COPPER" in building.ini, resourcemap2 component 3
-[10:32:27.366] patch  cave at 00007FF6686E0000, 2287 of 8192 bytes used (parser 00007FF6686E0800, dispatch 00007FF6686E0868, radius 00007FF6686E08C7)
-[10:32:27.366] hook ok      minimap overlay        target=00007FF668BADDE0 tramp=000002E7C8B00000 (16 bytes stolen)
-[10:32:27.366] hook ok      minimap row            target=00007FF668BAFEA0 tramp=000002E7C8B10000 (15 bytes stolen)
-[10:32:27.366] minimap  1 mod layer(s) hooked
-[10:32:27.366] hook ok      editor panel           target=00007FF668923110 tramp=000002E7C8BA0000 (19 bytes stolen)
-[10:32:27.366] hook ok      editor dispatch        target=00007FF6689FD100 tramp=000002E7C8BB0000 (23 bytes stolen)
-[10:32:27.366] hook ok      editor cursor          target=00007FF6689E0E70 tramp=000002E7C8BC0000 (21 bytes stolen)
-[10:32:27.366] hook ok      editor texels          target=00007FF668928B00 tramp=000002E7C8BD0000 (21 bytes stolen)
-[10:32:27.366] editor   1 mod brush pair(s) hooked
-[10:32:27.366] menu     version line -> "v%d.%d.%d.%d (64 bit DX11.1 - GPU: %ls) | tsmloader v.a0.1."
-[10:32:27.366] --- hooks installed ---
-[10:32:27.443] game.WARN  1
-[10:32:27.443] game.WARN  2
-[10:32:27.443] game.WARN  3
-[10:32:27.443] game.WARN  4
-[10:32:27.443] game.WARN  5
-[10:32:27.444] game.WARN  6
-[10:32:27.444] game.WARN  6
-[10:32:27.444] game.WARN  7
-[10:32:27.449] game.WARN  Monitor 0
-[10:32:27.449] game.WARN  Position 0 0
-[10:32:27.449] game.WARN  Size 1920 1080
-[10:32:27.449] game.WARN  8
-[10:32:27.471] game.ERROR setfocus
-[10:32:27.685] game.ERROR currentlanguage russian
-[10:32:29.726] game.ERROR Failed to open header for enumeration media_soviet/saved_last/header.bin
-[10:32:32.129] game.WARN  Workshop subscribed items num 2501
-[10:32:33.183] game.ERROR Cannot open A:\SteamLibrary\steamapps\workshop\content\784150\2267431874\headerE.bin editor header
-[10:32:33.202] game.ERROR Cannot open media_soviet/workshop_wip/2123044941/headerE.bin editor header
-[10:32:33.204] game.ERROR Cannot open media_soviet/workshop_wip/2227015925/headerE.bin editor header
-[10:32:33.207] game.ERROR Cannot open media_soviet/workshop_wip/2328603677/headerE.bin editor header
-[10:32:33.207] game.ERROR Cannot open media_soviet/workshop_wip/2363667274/headerE.bin editor header
-[10:32:33.212] game.WARN  found save editor-autosave4
-[10:32:39.619] game.info  v1.1.1.7 (64 bit DX11.1)
-[10:32:40.543] game.info  Loading string --- Initializing workshop items
-[10:32:40.573] game.WARN  Workshop subscribed items num 2501
-[10:32:42.687] game.info  Loading string --- Loading weather
-[10:32:42.696] game.info  Loading string --- Loading sky
-[10:32:42.703] game.info  Loading string --- Loading underground
-[10:32:42.708] game.info  Loading string --- Initializing post effect
-[10:32:42.715] game.info  Loading string --- Initializing water
-[10:32:42.732] game.info  Loading string --- Loading terrain
-[10:32:43.000] game.info  Loading string --- Initializing clouds
-[10:32:43.001] game.info  Loading string --- Initializing particle effects
-[10:32:43.041] game.info  Loading string --- Loading paths
-[10:32:43.044] game.info  Loading string --- Initializing grass
-[10:32:43.045] game.info  Loading string --- Initializing trees
-[10:32:43.052] game.info  Loading string --- Importing trees
-[10:32:43.380] game.info  Loading string --- Initializing buildings
-[10:32:43.407] game.info  Loading string --- Importing buildings
-[10:32:44.177] game.info  Loading string --- Initializing Ambients
-[10:32:44.300] game.info  Loading string --- Initializing shadow system
-[10:32:44.301] game.info  Loading string --- Initializing far map
-[10:32:44.302] game.info  Loading string --- Initializing emissive map
-[10:32:44.303] game.info  Loading string --- Initializing resource map
-[10:32:44.309] texel  deposit map texture 0 = 000002E86CB67DE0 (campaign1/resourcemap.dds)
-[10:32:44.309] vfs  fopen  media_soviet/campaign1/resourcemap2.dds
-[10:32:44.309] vfs  fopen  media_soviet/campaign1/resourcemap2.dds
-[10:32:44.314] texel  deposit map texture 1 = 000002E86CB67C60 (campaign1/resourcemap2.dds)
-[10:32:44.314] game.info  Loading string --- Initializing clouds shadow map
-[10:32:44.334] game.info  Loading string --- Import - Loading header
-[10:32:44.334] game.info  Opening headerE
-[10:32:44.354] game.info  Loading string --- Initializing shaders
-[10:32:44.369] game.info  Loading string --- Initializing screen marks
-[10:32:44.413] game.info  Loading string --- Initializing preview shot system
-[10:32:44.413] game.info  Loading string --- Initializing mud remove
-[10:32:44.414] game.info  Loading string --- Initializing main tabs
-[10:32:44.414] game.info  Loading string --- Initializing resources
-[10:32:44.475] resource  array now at 000002E8AB5E74E0
-[10:32:44.475] resource  name field at +0x0, 57 live records, room for 63
-[10:32:44.476] vfs  fopen  media_soviet/resources/copper_ore_vehicle.nmf
-[10:32:44.476] vfs  fopen  media_soviet/resources/copper_ore.mtl
-[10:32:44.476] vfs  fopen  media_soviet/resources/copper_ore1.nmf
-[10:32:44.476] vfs  fopen  media_soviet/resources/copper_ore2.nmf
-[10:32:44.477] vfs  fopen  media_soviet/resources/copper_ore3.nmf
-[10:32:44.477] vfs  fopen  media_soviet/resources/copper_ore4.nmf
-[10:32:44.477] resource  "copper_ore" cargo meshes: 5 of 5 (bulk) replaced
-[10:32:44.477] resource  "copper_ore" published as index 57 (template 18, caption 1000000), vector now 58
-[10:32:44.477] vfs  fopen  media_soviet/resources/copper_concentrate_vehicle.nmf
-[10:32:44.478] vfs  fopen  media_soviet/resources/copper_concentrate.mtl
-[10:32:44.478] vfs  fopen  media_soviet/resources/copper_concentrate1.nmf
-[10:32:44.478] vfs  fopen  media_soviet/resources/copper_concentrate2.nmf
-[10:32:44.479] vfs  fopen  media_soviet/resources/copper_concentrate3.nmf
-[10:32:44.479] vfs  fopen  media_soviet/resources/copper_concentrate4.nmf
-[10:32:44.480] resource  "copper_concentrate" cargo meshes: 5 of 5 (bulk) replaced
-[10:32:44.480] resource  "copper_concentrate" published as index 58 (template 19, caption 1000001), vector now 59
-[10:32:44.480] vfs  fopen  media_soviet/resources/raw_copper.nmf
-[10:32:44.480] vfs  fopen  media_soviet/resources/raw_copper.mtl
-[10:32:44.480] vfs  fopen  media_soviet/resources/raw_copper.dds
-[10:32:44.481] resource  "raw_copper" cargo meshes: 1 of 1 (open) replaced
-[10:32:44.481] resource  "raw_copper" published as index 59 (template 8, caption 1000002), vector now 60
-[10:32:44.481] vfs  fopen  media_soviet/resources/copper.nmf
-[10:32:44.482] vfs  fopen  media_soviet/resources/copper.mtl
-[10:32:44.482] vfs  fopen  media_soviet/resources/copper.dds
-[10:32:44.483] resource  "copper" cargo meshes: 1 of 1 (open) replaced
-[10:32:44.483] resource  "copper" published as index 60 (template 9, caption 1000003), vector now 61
-[10:32:44.483] === CRASH: ACCESS_VIOLATION at 00007FFE69680D04 ===
-[10:32:44.483]     A:\SteamLibrary\steamapps\common\SovietRepublic\C3DDLL64.dll + 0xB0D04
-[10:32:44.483]     reading address FFFFFFFFFFFFFFFF
-[10:32:44.483]     rax=00007FFE6967AC20 rbx=0000000000000000 rcx=4089B39EBD6C8CEB rdx=000000E8EF93AB80
-[10:32:44.483]     rsi=4089B39EBD6C8CEB rdi=000000E8EF93AB80 r8 =0000000000000000 r9 =0000000000000000
-[10:32:44.483]     rsp=000000E8EF93A9D0 rbp=0000000000000000 rip=00007FFE69680D04
-[10:32:44.483]     --- return addresses on the stack ---
-[10:32:44.483]       SOVIET64.exe + 0x9E11C8
-[10:32:44.483]       SOVIET64.exe + 0x9E11C8
-[10:32:44.483]       SOVIET64.exe + 0x9E11C0
-[10:32:44.483]       SOVIET64.exe + 0x9E11C8
-[10:32:44.483]       SOVIET64.exe + 0x9E11C8
-[10:32:44.483]       SOVIET64.exe + 0x9E11C0
-[10:32:44.483]       SOVIET64.exe + 0x9D4F10
-[10:32:44.483]       SOVIET64.exe + 0x9D4F10
-[10:32:44.483]       SOVIET64.exe + 0x9EACD0
-[10:32:44.483]       SOVIET64.exe + 0x8A6368
-[10:32:44.483]       SOVIET64.exe + 0x9E1100
-[10:32:44.483]       SOVIET64.exe + 0x8A6000
-[10:32:44.483]       SOVIET64.exe + 0x0
-[10:32:44.483]       SOVIET64.exe + 0x8A61D0
-[10:32:44.483]       SOVIET64.exe + 0x9D4F10
-[10:32:44.483]       SOVIET64.exe + 0x9EACD0
-[10:32:44.483] === end crash report ===
-[10:32:44.486] resource  "copper2": cargo mesh load faulted - keeping the template's
-[10:32:44.486] resource  "copper2" published as index 61 (template 14, caption 1000004), vector now 62
-[10:32:44.507] game.info  Loading string --- Initializing building types
-[10:32:45.009] game.ERROR ResourceGet - not found waste
-[10:32:45.012] game.ERROR ResourceGet - not found waste
-[10:32:45.014] game.ERROR ResourceGet - not found waste
-[10:32:45.017] game.ERROR ResourceGet - not found waste
-[10:32:45.337] game.ERROR ResourceGet - not found waste
-[10:32:45.579] game.ERROR ResourceGet - not found waste
-[10:32:45.591] game.ERROR ResourceGet - not found waste
-[10:32:45.805] game.ERROR ResourceGet - not found waste
-[10:32:45.810] game.ERROR ResourceGet - not found waste
-[10:32:46.146] game.ERROR ResourceGet - not found waste
-[10:32:46.219] game.ERROR ResourceGet - not found waste
-[10:32:47.074] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\2730167346\RBMK_Coolant_Pump\building.ini
-[10:32:47.342] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\3035907116\lignite\building.ini
-[10:32:47.342] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\3035907116\zellenkuehler\building.ini
-[10:32:47.342] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\3035907116\bhkw\building.ini
-[10:32:47.409] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\3033710102\textures\building.ini
-[10:32:47.441] game.ERROR ResourceGet - not found $STORAGE_SPECIAL
-[10:32:47.442] game.ERROR ResourceGet - not found $WORKING_VEHICLES_NEEDED
-[10:32:47.490] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\3013547359\textures\building.ini
-[10:32:47.629] game.ERROR ResourceGet - not found $POLLUTION_MEDIUM
-[10:32:47.728] game.ERROR ResourceGet - not found waste
-[10:32:47.828] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\2324838287\HOUSE\building.ini
-[10:32:48.015] game.ERROR ResourceGet - not found waste
-[10:32:48.017] game.ERROR ResourceGet - not found waste
-[10:32:48.142] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\2845627877\rennwerk\building.ini
-[10:32:48.143] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\2845627877\rennwerkmuseum\building.ini
-[10:32:48.204] game.ERROR ResourceGet - not found waste
-[10:32:48.265] game.ERROR ResourceGet - not found waste
-[10:32:48.479] game.ERROR ResourceGet - not found waste
-[10:32:48.481] game.ERROR ResourceGet - not found waste
-[10:32:48.483] game.ERROR ResourceGet - not found $STORAGE_EXPORT
-[10:32:48.484] game.ERROR ResourceGet - not found $RESOURCE_VISUALIZATION
-[10:32:48.492] game.ERROR ResourceGet - not found $PARTICLE
-[10:32:48.515] game.ERROR ResourceGet - not found waste
-[10:32:48.991] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\2908202819\textures\building.ini
-[10:32:50.787] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\2315089043\HOUSE5\building.ini
-[10:32:51.977] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\2656057679\HOUSE\building.ini
-[10:32:52.193] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\2608147662\mod\building.ini
-[10:32:52.435] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\2557590870\textures\building.ini
-[10:32:52.821] game.ERROR ResourceGet - not found 1
-[10:32:53.061] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\2349750492\HOUSE3\building.ini
-[10:32:53.062] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\2349750492\HOUSE5\building.ini
-[10:32:54.123] game.ERROR ResourceGet - not found 1
-[10:32:54.967] game.ERROR Failed to open media_soviet/workshop_wip/3512915555/textures/building.ini
-[10:32:54.967] game.ERROR Failed to open media_soviet/workshop_wip/3512915555/school/building.ini
-[10:32:55.067] game.info  Loading string --- Initializing vehicle types
-[10:32:55.334] game.ERROR ResourceGet - not found cargovehicles
-[10:32:55.695] game.ERROR Failed to open media_soviet/cwc/vehicles/25d49/script.ini
-[10:32:55.695] game.ERROR Failed to open media_soviet/cwc/vehicles/32d43/script.ini
-[10:32:55.695] game.ERROR Failed to open media_soviet/cwc/vehicles/34d44/script.ini
-[10:32:55.698] game.ERROR Failed to open media_soviet/cwc/vehicles/bbo214/script.ini
-[10:32:55.698] game.ERROR Failed to open media_soviet/cwc/vehicles/bbotender/script.ini
-[10:32:55.698] game.ERROR Failed to open media_soviet/cwc/vehicles/br80/script.ini
-[10:32:55.698] game.ERROR Failed to open media_soviet/cwc/vehicles/br81/script.ini
-[10:32:55.719] game.ERROR Failed to open media_soviet/cwc/vehicles/Eseries/script.ini
-[10:32:55.719] game.ERROR Failed to open media_soviet/cwc/vehicles/Etender/script.ini
-[10:32:55.719] game.ERROR Failed to open media_soviet/cwc/vehicles/FDseries/script.ini
-[10:32:55.719] game.ERROR Failed to open media_soviet/cwc/vehicles/FDtender/script.ini
-[10:32:55.727] game.ERROR Failed to open media_soviet/cwc/vehicles/ISseries/script.ini
-[10:32:55.727] game.ERROR Failed to open media_soviet/cwc/vehicles/IStender/script.ini
-[10:32:55.729] game.ERROR Failed to open media_soviet/cwc/vehicles/ol49/script.ini
-[10:32:55.730] game.ERROR Failed to open media_soviet/cwc/vehicles/Olo1/script.ini
-[10:32:55.730] game.ERROR Failed to open media_soviet/cwc/vehicles/otuatender/script.ini
-[10:32:55.730] game.ERROR Failed to open media_soviet/cwc/vehicles/pm2/script.ini
-[10:32:55.730] game.ERROR Failed to open media_soviet/cwc/vehicles/pm3/script.ini
-[10:32:55.738] game.ERROR Failed to open media_soviet/cwc/vehicles/shared/script.ini
-[10:32:55.738] game.ERROR Failed to open media_soviet/cwc/vehicles/SoSeries/script.ini
-[10:32:55.738] game.ERROR Failed to open media_soviet/cwc/vehicles/SOtender/script.ini
-[10:32:55.738] game.ERROR Failed to open media_soviet/cwc/vehicles/SuSeries/script.ini
-[10:32:55.738] game.ERROR Failed to open media_soviet/cwc/vehicles/Sutender/script.ini
-[10:32:55.738] game.ERROR Failed to open media_soviet/cwc/vehicles/tkh491/script.ini
-[10:32:55.738] game.ERROR Failed to open media_soviet/cwc/vehicles/tkt48/script.ini
-[10:32:55.743] game.ERROR Failed to open media_soviet/cwc/vehicles/ty45/script.ini
-[10:32:55.744] game.ERROR Failed to open media_soviet/cwc/vehicles/WR360/script.ini
-[10:32:56.008] game.ERROR Failed to open media_soviet/dlc3/vehicles/MazTex/script.ini
-[10:32:56.271] game.ERROR Failed to open media_soviet/dlc3/vehicles/SaurerTex/script.ini
-[10:32:56.308] game.ERROR Failed to open media_soviet/dlc3/vehicles/textures/script.ini
-[10:32:56.308] game.ERROR Failed to open media_soviet/dlc3/vehicles/texturesH75/script.ini
-[10:32:56.308] game.ERROR Failed to open media_soviet/dlc3/vehicles/texturesRB2/script.ini
-[10:32:56.333] game.ERROR Failed to open media_soviet/dlc3/vehicles/wozki/script.ini
-[10:32:56.335] game.ERROR Failed to open media_soviet/dlc3/vehicles/YagTex/script.ini
-[10:32:56.771] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\2957347546\W115\script.ini
-[10:32:56.771] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\2957347546\W115P\script.ini
-[10:32:56.903] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\2782038889\PT76\script.ini
-[10:32:56.903] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\2782038889\T54\script.ini
-[10:32:56.904] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\2782038889\T62\script.ini
-[10:32:56.920] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\2872403723\Tram71-619\script.ini
-[10:32:57.751] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\2059633685\VL-8front2\script.ini
-[10:32:57.751] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\2059633685\VL-8back2\script.ini
-[10:32:57.848] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\2217573698\MTLBU\script.ini
-[10:32:58.118] game.ERROR Failed to open media_soviet/workshop_wip/3722084702/gaz24_taxi/script.ini
-[10:32:58.163] game.ERROR Assignment of trainbox pair failed 2548042372/BCi29Trackbuilder
-[10:32:58.164] game.ERROR Assignment of trainbox pair failed 2548042372/No704Trackbuilder
-[10:32:58.164] game.ERROR Assignment of trainbox pair failed 2548042372/No704TrackbuilderCrane
-[10:33:00.118] game.info  Loading string --- Initializing GUI models
-[10:33:00.308] game.info  Loading string --- Initializing Conveyors
-[10:33:00.462] game.info  Loading string --- Initializing Pipes
-[10:33:00.468] game.info  Loading string --- Initializing Water Pipes
-[10:33:00.480] game.info  Loading string --- Initializing Pipes
-[10:33:00.495] game.info  Loading string --- Initializing Eletrical wires
-[10:33:00.523] game.info  Loading string --- Initializing Roads
-[10:33:00.569] game.info  Loading string --- Initializing Roads secondary
-[10:33:00.592] game.info  Loading string --- Initializing Rails
-[10:33:00.641] game.info  Loading string --- Initializing Rail secondary
-[10:33:00.641] game.info  Loading string --- Initializing Runways
-[10:33:00.666] game.info  Loading string --- Initializing Pedestrian way
-[10:33:00.678] game.info  Loading string --- Initializing Factory connections
-[10:33:00.697] game.info  Loading string --- Initializing water connections
-[10:33:00.698] game.info  Loading string --- Initializing cableway connections
-[10:33:00.698] game.info  Loading string --- Initializing Heating
-[10:33:00.702] game.info  Loading string --- Initializing tools
-[10:33:02.252] game.info  Loading string --- Initializing GUI textures
-[10:33:02.281] vfs  fopen  media_soviet/resources/copper_ore.png
-[10:33:02.281] vfs  fopen  media_soviet/resources/copper_concentrate.png
-[10:33:02.282] vfs  fopen  media_soviet/resources/raw_copper.png
-[10:33:02.282] vfs  fopen  media_soviet/resources/copper.png
-[10:33:06.020] game.WARN  m_WaterErosionTerainWaterSediment 0
-[10:33:06.021] game.WARN  m_WaterErosionTerainWaterSediment 0
-[10:33:06.021] game.WARN  m_WaterErosionOutflow 0
-[10:33:06.021] game.WARN  m_WaterErosionOutflow 0
-[10:33:06.022] game.WARN  m_WaterErosionOutflowDiagonal 0
-[10:33:06.022] game.WARN  m_WaterErosionOutflowDiagonal 0
-[10:33:06.022] game.WARN  m_WaterErosionTerainWaterSedimentRT 0
-[10:33:06.022] game.WARN  m_WaterErosionTerainWaterSedimentRT 0
-[10:33:06.022] game.WARN  m_WaterErosionOutflowRT 0
-[10:33:06.022] game.WARN  m_WaterErosionOutflowRT 0
-[10:33:06.022] game.WARN  m_WaterErosionOutflowDiagonalRT 0
-[10:33:06.022] game.WARN  m_WaterErosionOutflowDiagonalRT 0
-[10:33:06.023] game.WARN  m_WaterErosionFinalTerrain 0
-[10:33:06.023] game.WARN  m_WaterErosionFinalTerrainRT 0
-[10:33:06.023] game.WARN  m_WaterErosionNormalTest 0
-[10:33:06.023] game.WARN  m_WaterErosionNormalTestRT 0
-[10:33:06.570] game.info  Loading string --- Initializing Semaphores
-[10:33:06.746] game.info  Loading string --- Preparing ambients
-[10:33:06.746] game.info  Loading string --- Importing game files - creating arrays
-[10:33:06.747] game.ERROR Cannot open media_soviet/campaign1/events.bin for load EmergencyEvents
-[10:33:06.747] game.ERROR Cannot open media_soviet/campaign1/movies.bin for load Movies
-[10:33:06.748] game.info  Loading string --- Import - Roads secondary
-[10:33:06.751] game.info  Loading string --- Import - Rails
-[10:33:06.752] game.info  Loading string --- Import - Rails secondary
-[10:33:06.753] game.info  Loading string --- Import - Conveyors
-[10:33:06.753] game.info  Loading string --- Import - Pipes
-[10:33:06.755] game.info  Loading string --- Import - WaterPipes
-[10:33:06.755] game.info  Loading string --- Import - Fences
-[10:33:06.756] game.info  Loading string --- Import - Heating
-[10:33:06.756] game.info  Loading string --- Import - Factory Connections
-[10:33:06.756] game.info  Loading string --- Import - Pedestrian Ways
-[10:33:06.757] game.info  Loading string --- Import - Electric wires high tension
-[10:33:06.758] game.info  Loading string --- Import - Electric wires low tension
-[10:33:06.758] game.info  Loading string --- Import - Buoys
-[10:33:06.759] game.info  Loading string --- Import - Cableway
-[10:33:06.759] game.info  Loading string --- Import - Runways
-[10:33:06.779] game.info  Loading string --- Import - Air Pollution
-[10:33:06.781] game.ERROR Cannot open media_soviet/campaign1/pollution.bin for load Air Pollution
-[10:33:06.781] game.info  Loading string --- Import - Christmas lights
-[10:33:06.781] game.ERROR Cannot open media_soviet/campaign1/christmas.bin for load Christmas lights
-[10:33:06.781] game.info  Loading string --- Import - Notification Messages
-[10:33:06.781] game.ERROR Cannot open media_soviet/campaign1/messages.bin for load Notification Messages
-[10:33:06.781] game.info  Loading string --- Import - Scripts
-[10:33:06.782] game.ERROR Scripts not loaded - from version 122 or lower are obsolete 
-[10:33:06.782] game.info  Loading string --- Import - Custom names
-[10:33:06.782] game.info  Loading string --- Import - City names
-[10:33:06.782] game.info  Loading string --- Import - Research
-[10:33:06.782] game.ERROR Cannot open media_soviet/campaign1/research.bin for load Research
-[10:33:06.782] game.info  Loading string --- Import - Movies
-[10:33:06.782] game.ERROR Cannot open media_soviet/campaign1/movies.bin for load Movies
-[10:33:06.782] game.info  Loading string --- Import - Emergency events
-[10:33:06.782] game.ERROR Cannot open media_soviet/campaign1/events.bin for load EmergencyEvents
-[10:33:06.783] game.info  Loading string --- Import - Roads
-[10:33:06.798] game.info  Loading string --- Import - Roads secondary
-[10:33:06.852] game.info  Loading string --- Import - Rails
-[10:33:06.926] game.info  Loading string --- Import - Rails secondary
-[10:33:06.932] game.info  Loading string --- Import - Conveyors
-[10:33:06.933] game.info  Loading string --- Import - Pipes
-[10:33:06.933] game.info  Loading string --- Import - WaterPipes
-[10:33:06.933] game.info  Loading string --- Import - Fences
-[10:33:06.936] game.info  Loading string --- Import - Heating
-[10:33:06.936] game.info  Loading string --- Import - Factory Connections
-[10:33:06.936] game.info  Loading string --- Import - Pedestrian Ways
-[10:33:06.950] game.info  Loading string --- Import - Electric wires high tension
-[10:33:06.953] game.info  Loading string --- Import - Electric wires low tension
-[10:33:06.956] game.info  Loading string --- Import - Water
-[10:33:06.958] game.info  Loading string --- Import - Cableway
-[10:33:06.958] game.info  Loading string --- Import - Runways
-[10:33:06.959] game.info  Loading string --- Import - Semaphores
-[10:33:06.959] game.info  Loading string --- Import - Buildings game
-[10:33:06.986] game.info  Loading string --- Import - Road junctions
-[10:33:06.987] game.info  Loading string --- Import - Vehicles
-[10:33:06.987] game.info  Loading string --- Import - Lines
-[10:33:06.987] game.info  Loading string --- Import - Workers
-[10:33:07.093] game.ERROR Failed to open header for enumeration media_soviet/scenarios/clothesexport/script.ini
-[10:33:07.093] game.ERROR Failed to open header for enumeration media_soviet/scenarios/goods/script.ini
-[10:33:07.093] game.ERROR Failed to open header for enumeration media_soviet/scenarios/steelexport/script.ini
-[10:33:07.093] game.info  Loading string --- Import - Vehicle Replace tool
-[10:33:07.094] game.ERROR Read error (8) - File 'media_soviet/campaign1/replace_history.bin' 
-[10:33:07.095] game.ERROR Read error (6) - File 'media_soviet/campaign1/usedveh.bin' 
-[10:33:07.095] game.info  Loading string --- Import - CO tool
-[10:33:07.095] game.info  Loading string --- Import - Verifying Roads
-[10:33:07.096] game.info  Loading string --- Import - Verifying Footpaths
-[10:33:07.096] game.info  Loading string --- Import - Verifying Railways
-[10:33:07.096] game.info  Loading string --- Import - Verifying Buildings
-[10:33:07.096] game.info  Loading string --- Import - Verifying Buildings - Step 2
-[10:33:07.096] game.info  Loading string --- Import - Electric High wires verification
-[10:33:07.096] game.info  Loading string --- Import - Electric Low wires verification
-[10:33:07.096] game.info  Loading string --- Import - Pipelines verification
-[10:33:07.096] game.info  Loading string --- Import - WaterPipes verification
-[10:33:07.096] game.info  Loading string --- Import - Fences verification
-[10:33:07.096] game.info  Loading string --- Import - Heating verification
-[10:33:07.096] game.info  Loading string --- Import - Initializing chain semaphores
-[10:33:07.096] game.info  Loading string --- Import - Vehicles Validation
-[10:33:07.096] game.info  Loading string --- Import - Check vehicles
-[10:33:07.096] game.info  Loading string --- Import - Check buildings
-[10:33:07.096] game.info  Loading string --- Import - Check vehicles - conversion to new system
-[10:33:07.096] game.info  Loading string --- Import - Emergency events verification
-[10:33:07.096] game.info  Loading string --- Import - Fixing snowplows
-[10:33:07.097] game.info  Loading string --- Import - Reconnection lamp to electric sources
-[10:33:07.097] game.info  Loading string --- Import - Christmas lights electric sources
-[10:33:07.097] game.info  Loading string --- Import - Trolley  connection to electric sources
-[10:33:07.097] game.info  Loading string --- Import - Regenerating semaphore connections
-[10:33:07.097] game.info  Loading string --- Import - Personal cars heading fix
-[10:33:07.097] game.info  Loading string --- Import - Check buildings
-[10:33:07.097] game.info  Loading string --- Import - Workers emergency events verification
-[10:33:07.097] game.info  Loading string --- Import - Adding air custom houses
-[10:33:07.098] game.info  Loading string --- Check for bad walking connections
-[10:33:07.098] game.info  Loading string --- Check for bad building railways
-[10:33:07.098] game.info  Loading string --- Import - Recalc heating or electric or water connection
-[10:33:07.099] game.info  Loading string --- Import - Workers walking to recalc
-[10:33:07.099] game.info  Loading string --- Import - Recalculating factory variable production/consumption
-[10:33:07.134] game.info  Loading string --- Import - Generating field positions
-[10:33:07.134] game.info  Loading string --- Import - Finished
-[10:33:07.135] game.info  Loading string --- Loading weathers
-[10:33:07.135] game.info  Loading string --- Creating dynamic Lines
-[10:33:07.136] game.info  Loading string --- Creating road junctions
-[10:33:07.137] game.info  Loading string --- Creating road sign zones
-[10:33:07.138] game.info  Loading string --- Game initialized
-[10:33:42.033] game.ERROR Cannot open media_soviet/saved_last/header.bin header
-[10:33:42.033] game.ERROR Cannot open media_soviet/saved_last/research.bin for save Research
-[10:33:42.033] game.ERROR Cannot open media_soviet/saved_last/movies.bin for save Movies
-[10:33:42.033] game.ERROR Cannot open media_soviet/saved_last/messages.bin for save Notification messages
-[10:33:42.033] game.ERROR Cannot open media_soviet/saved_last/pollution.bin for save Air Pollution
-[10:33:42.033] game.ERROR Cannot open media_soviet/saved_last/christmas.bin for save Christmas lights
-[10:33:42.033] game.ERROR Cannot open media_soviet/saved_last/namepoints.bin for save Namepoints
-[10:33:42.033] game.ERROR Cannot open media_soviet/saved_last/runningScripts.bin for save Scripts
-[10:33:42.033] game.ERROR Cannot open media_soviet/saved_last/events.bin for save Emergency Event
-[10:33:42.033] game.ERROR Cannot open media_soviet/saved_last/trees_game.bin for save Trees
-[10:33:42.033] game.ERROR Cannot open media_soviet/saved_last/road.bin for save Roads
-[10:33:42.034] game.ERROR Cannot open media_soviet/saved_last/road_secondary.bin for save Roads Secondary
-[10:33:42.034] game.ERROR Cannot open media_soviet/saved_last/rail.bin for save Rail
-[10:33:42.034] game.ERROR Cannot open media_soviet/saved_last/rail_secondary.bin for save Rail Secondary
-[10:33:42.034] game.ERROR Cannot open media_soviet/saved_last/conveyor.bin for save Conveyor
-[10:33:42.034] game.ERROR Cannot open media_soviet/saved_last/pipe.bin for save Pipes
-[10:33:42.034] game.ERROR Cannot open media_soviet/saved_last/waterpipes.bin for save WaterPipes
-[10:33:42.034] game.ERROR Cannot open media_soviet/saved_last/fence.bin for save Fences
-[10:33:42.034] game.ERROR Cannot open media_soviet/saved_last/heating.bin for save Pipes
-[10:33:42.034] game.ERROR Cannot open media_soviet/saved_last/factoryconnection.bin for save Factory connection
-[10:33:42.034] game.ERROR Cannot open media_soviet/saved_last/pedestrianway.bin for save Pedestrian way
-[10:33:42.034] game.ERROR Cannot open media_soviet/saved_last/electro_high.bin for save Electric wires high tension
-[10:33:42.034] game.ERROR Cannot open media_soviet/saved_last/electro_low.bin for save Electric wires low tension
-[10:33:42.035] game.ERROR Cannot open media_soviet/saved_last/buoy.bin for save Water
-[10:33:42.035] game.ERROR Cannot open media_soviet/saved_last/cableway.bin for save cableway ropes
-[10:33:42.035] game.ERROR Cannot open media_soviet/saved_last/airplane.bin for save air roads
-[10:33:42.035] game.ERROR Cannot open media_soviet/saved_last/semaphores.bin for save Semaphores
-[10:33:42.035] game.ERROR Cannot open media_soviet/saved_last/buildings_game.bin for save Buildings game
-[10:33:42.035] game.ERROR Cannot open media_soviet/saved_last/crossroads.bin for save Crossroads
-[10:33:42.035] game.ERROR Cannot open media_soviet/saved_last/vehicles.bin for save Vehicle
-[10:33:42.035] game.ERROR Cannot open media_soviet/saved_last/lines.bin for save Lines
-[10:33:42.035] game.ERROR Cannot open media_soviet/saved_last/workers.bin for save Workers
-[10:33:42.035] game.ERROR Cannot open media_soviet/saved_last/stats.ini for save Stats
-[10:33:42.035] game.ERROR Write error (2) - File 'media_soviet/saved_last/toolvr.bin' 
-[10:33:42.035] game.ERROR Write error (2) - File 'media_soviet/saved_last/replace_history.bin' 
-[10:33:42.036] game.ERROR Write error (2) - File 'media_soviet/saved_last/usedveh.bin' 
-[10:33:42.036] game.ERROR Cannot open media_soviet/saved_last/toolco.bin for save CO presets
-[10:33:42.036] game.ERROR Cannot open media_soviet/saved_last/windows.bin for save Windows
-[10:33:44.162] --- shutdown: 24 redirects, 0 resource injections, 71 distinct names ---
+[15:32:05.573] tesmioloader phase B
+[15:32:05.573] exe base  00007FF7C2000000    engine base 00007FFE82870000
+[15:32:05.573] vfs root  A:\SteamLibrary\steamapps\common\SovietRepublic\tesmioloader\build\vfs (on)
+[15:32:05.573] ---
+[15:32:05.573] hook ok      ReadFileIntoBuffer     orig=00007FFE828E79B0
+[15:32:05.573] hook ok      CheckIfFileExist       orig=00007FFE828E7B80
+[15:32:05.573] hook ok      C3DLog_PrintInfo       orig=00007FFE8290C700
+[15:32:05.573] hook ok      C3DLog_PrintWarning    orig=00007FFE8290C7F0
+[15:32:05.573] hook ok      C3DLog_PrintError      orig=00007FFE8290C8E0
+[15:32:05.573] hook ok      fopen                  orig=00007FFEBFFE55D0
+[15:32:05.573] hook ok      fopen_s                orig=00007FFEBFFE55F0
+[15:32:05.573] hook ok      _wfopen                orig=00007FFEBFFE5550
+[15:32:05.573] hook ok      _wfopen_s              orig=00007FFEBFFE5570
+[15:32:05.573] hook ok      fread                  orig=00007FFEBFF87ED0
+[15:32:05.573] hook ok      engine fopen           orig=00007FFEBFFE55D0
+[15:32:05.573] hook ok      engine fopen_s         orig=00007FFEBFFE55F0
+[15:32:05.573] hook ok      engine _wfopen         orig=00007FFEBFFE5550
+[15:32:05.573] hook ok      engine fread           orig=00007FFEBFF87ED0
+[15:32:05.573] hook ok      engine CreateFileA     orig=00007FFEC1D04E90
+[15:32:05.573] hook ok      engine CreateFile2     orig=00007FFEC1D04E80
+[15:32:05.573] hook ok      CreateFileW            orig=00007FFEC1D04EA0
+[15:32:05.573] texel  vtable hooked: Load2DFromFile=00007FFE828879F0 GetTexel=00007FFE82889080
+[15:32:05.573] menu     version line -> "v%d.%d.%d.%d (64 bit DX11.1 - GPU: %ls) | tsmloader a0.2."
+[15:32:05.574] plugin   depletion        1.1      from depletion.dll
+[15:32:05.574] deposits  "copper" type 10 "$TYPE_MINE_COPPER" -> resourcemap2 component 3, radius from the game, editor channel 4 (slot 5, column 5)
+[15:32:05.574] patch  deposit type 10 added: "$TYPE_MINE_COPPER" in building.ini, resourcemap2 component 3
+[15:32:05.574] patch  cave at 00007FF7C1FE0000, 2287 of 8192 bytes used (parser 00007FF7C1FE0800, dispatch 00007FF7C1FE0868, radius 00007FF7C1FE08C7)
+[15:32:05.574] hook ok      minimap overlay        target=00007FF7C24BDDE0 tramp=0000027C62C90000 (16 bytes stolen)
+[15:32:05.574] hook ok      minimap row            target=00007FF7C24BFEA0 tramp=0000027C62CA0000 (15 bytes stolen)
+[15:32:05.574] minimap  1 mod layer(s) hooked
+[15:32:05.574] hook ok      editor panel           target=00007FF7C2233110 tramp=0000027C62E90000 (19 bytes stolen)
+[15:32:05.574] hook ok      editor dispatch        target=00007FF7C230D100 tramp=0000027C62EA0000 (23 bytes stolen)
+[15:32:05.574] hook ok      editor cursor          target=00007FF7C22F0E70 tramp=0000027C62EB0000 (21 bytes stolen)
+[15:32:05.574] hook ok      editor texels          target=00007FF7C2238B00 tramp=0000027C62EC0000 (21 bytes stolen)
+[15:32:05.574] editor   1 mod brush pair(s) hooked
+[15:32:05.574] plugin   service "deposits" v1 from deposits.dll
+[15:32:05.574] plugin   deposits         1.0      from deposits.dll
+[15:32:05.575] registry  "copper_ore" -> next free slot, template 18, text id 1000000
+[15:32:05.575] registry  "copper_concentrate" -> next free slot, template 19, text id 1000001
+[15:32:05.575] registry  "raw_copper" -> next free slot, template 8, text id 1000002
+[15:32:05.575] registry  "copper" -> next free slot, template 9, text id 1000003
+[15:32:05.575] registry  "copper2" -> next free slot, template 14, text id 1000004
+[15:32:05.575] hook ok      C3D_LANGUAGE::GetString orig=00007FFE82907F10
+[15:32:05.575] hook ok      ResourceGet            target=00007FF7C22AA7C0 tramp=0000027C62ED0000 (20 bytes stolen)
+[15:32:05.575] resource  hook mode=2 rva=0x2AA7C0, 5 name(s) declared
+[15:32:05.575] plugin   service "resources" v1 from resources.dll
+[15:32:05.575] plugin   resources        1.0      from resources.dll
+[15:32:05.575] hook ok      C3D_TERRAIN::Render    orig=00007FFE82967560
+[15:32:05.575] hook ok      mine tick              target=00007FF7C21B3690 tramp=0000027C62EE0000 (15 bytes stolen)
+[15:32:05.575] hook ok      mine panel             target=00007FF7C2786AC0 tramp=0000027C64710000 (21 bytes stolen)
+[15:32:05.575] deplete  oil        type 0   resourcemap  component 0, 1200 t per saturated texel
+[15:32:05.575] deplete  iron       type 1   resourcemap  component 1, 1200 t per saturated texel
+[15:32:05.575] deplete  coal       type 2   resourcemap  component 2, 1200 t per saturated texel
+[15:32:05.575] deplete  uranium    type 6   resourcemap2 component 0, 1200 t per saturated texel
+[15:32:05.575] deplete  bauxite    type 7   resourcemap2 component 1, 1200 t per saturated texel
+[15:32:05.575] deplete  gravel     type 3   terrain mask component 2, 30000 t per saturated texel
+[15:32:05.575] deplete  copper     type 10  resourcemap2 component 3, 1200 t per saturated texel
+[15:32:05.575] deplete  7 deposit type(s) will run out, map written every 5 s
+[15:32:05.575] plugin   3 loaded
+[15:32:05.575] --- hooks installed ---
+[15:32:05.652] game.WARN  1
+[15:32:05.652] game.WARN  2
+[15:32:05.652] game.WARN  3
+[15:32:05.652] game.WARN  4
+[15:32:05.652] game.WARN  5
+[15:32:05.653] game.WARN  6
+[15:32:05.653] game.WARN  6
+[15:32:05.653] game.WARN  7
+[15:32:05.658] game.WARN  Monitor 0
+[15:32:05.658] game.WARN  Position 0 0
+[15:32:05.658] game.WARN  Size 1920 1080
+[15:32:05.659] game.WARN  8
+[15:32:05.678] game.ERROR setfocus
+[15:32:05.877] game.ERROR currentlanguage russian
+[15:32:07.579] game.ERROR Failed to open header for enumeration media_soviet/saved_last/header.bin
+[15:32:13.234] game.WARN  found save 10770 - coppertest
+[15:32:13.235] game.WARN  found save 12334 - sovietmp
+[15:32:13.236] game.WARN  found save 15695 - coppertest2
+[15:32:13.236] game.WARN  found save 164 - guide
+[15:32:13.236] game.WARN  found save 20700 - Altai
+[15:32:13.237] game.WARN  found save 21924 - PSSR
+[15:32:13.238] game.WARN  found save 2281 - wrsrmap
+[15:32:13.238] game.WARN  found save 23909 - 222
+[15:32:13.238] game.ERROR Failed to open header for enumeration media_soviet/save/23909 - 222/header.bin
+[15:32:13.239] game.WARN  found save 24751 - test2
+[15:32:13.239] game.WARN  found save 2549 - trainguide
+[15:32:13.240] game.WARN  found save 26397 - test3
+[15:32:13.241] game.WARN  found save 32493 - My republic
+[15:32:13.241] game.WARN  found save 5066 - test
+[15:32:13.242] game.WARN  found save 5238 - Tworivers
+[15:32:13.243] game.WARN  found save autosave1
+[15:32:13.243] game.WARN  found save autosave2
+[15:32:13.243] game.WARN  found save autosave3
+[15:32:13.243] game.WARN  found save autosave4
+[15:32:13.244] game.WARN  found save autosave5
+[15:32:13.276] game.WARN  Workshop subscribed items num 2501
+[15:32:18.664] game.info  v1.1.1.7 (64 bit DX11.1)
+[15:32:19.633] game.info  Loading string --- Initializing workshop items
+[15:32:19.664] game.WARN  Workshop subscribed items num 2501
+[15:32:21.547] game.info  Loading string --- Loading weather
+[15:32:21.552] game.info  Loading string --- Loading sky
+[15:32:21.555] game.info  Loading string --- Loading underground
+[15:32:21.557] game.info  Loading string --- Initializing post effect
+[15:32:21.565] game.info  Loading string --- Initializing water
+[15:32:21.577] game.info  Loading string --- Loading terrain
+[15:32:21.809] game.info  Loading string --- Initializing clouds
+[15:32:21.811] game.info  Loading string --- Initializing particle effects
+[15:32:21.844] game.info  Loading string --- Loading paths
+[15:32:21.847] game.info  Loading string --- Initializing grass
+[15:32:21.849] game.info  Loading string --- Initializing trees
+[15:32:21.855] game.info  Loading string --- Importing trees
+[15:32:22.059] game.info  Loading string --- Initializing buildings
+[15:32:22.072] game.info  Loading string --- Importing buildings
+[15:32:22.662] game.info  Loading string --- Initializing Ambients
+[15:32:22.783] game.info  Loading string --- Initializing shadow system
+[15:32:22.784] game.info  Loading string --- Initializing far map
+[15:32:22.785] game.info  Loading string --- Initializing emissive map
+[15:32:22.785] game.info  Loading string --- Initializing resource map
+[15:32:22.788] texel  deposit map texture 0 = 0000027CF6B96650 (save\autosave2/resourcemap.dds)
+[15:32:22.791] texel  deposit map texture 1 = 0000027CF6B92150 (save\autosave2/resourcemap2.dds)
+[15:32:22.791] game.info  Loading string --- Initializing clouds shadow map
+[15:32:22.810] game.info  Loading string --- Import - Loading header
+[15:32:22.831] game.info  Loading string --- Initializing shaders
+[15:32:22.847] game.info  Loading string --- Initializing screen marks
+[15:32:22.892] game.info  Loading string --- Initializing preview shot system
+[15:32:22.893] game.info  Loading string --- Initializing mud remove
+[15:32:22.893] game.info  Loading string --- Initializing main tabs
+[15:32:22.893] game.info  Loading string --- Initializing resources
+[15:32:22.963] resource  array now at 0000027D30652700
+[15:32:22.963] resource  name field at +0x0, 57 live records, room for 63
+[15:32:22.964] vfs  fopen  media_soviet/resources/copper_ore_vehicle.nmf
+[15:32:22.965] vfs  fopen  media_soviet/resources/copper_ore.mtl
+[15:32:22.965] vfs  fopen  media_soviet/resources/copper_ore1.nmf
+[15:32:22.965] vfs  fopen  media_soviet/resources/copper_ore2.nmf
+[15:32:22.966] vfs  fopen  media_soviet/resources/copper_ore3.nmf
+[15:32:22.966] vfs  fopen  media_soviet/resources/copper_ore4.nmf
+[15:32:22.966] resource  "copper_ore" cargo meshes: 5 of 5 (bulk) replaced
+[15:32:22.966] resource  "copper_ore" published as index 57 (template 18, caption 1000000), vector now 58
+[15:32:22.966] vfs  fopen  media_soviet/resources/copper_concentrate_vehicle.nmf
+[15:32:22.967] vfs  fopen  media_soviet/resources/copper_concentrate.mtl
+[15:32:22.967] vfs  fopen  media_soviet/resources/copper_concentrate1.nmf
+[15:32:22.968] vfs  fopen  media_soviet/resources/copper_concentrate2.nmf
+[15:32:22.968] vfs  fopen  media_soviet/resources/copper_concentrate3.nmf
+[15:32:22.969] vfs  fopen  media_soviet/resources/copper_concentrate4.nmf
+[15:32:22.969] resource  "copper_concentrate" cargo meshes: 5 of 5 (bulk) replaced
+[15:32:22.969] resource  "copper_concentrate" published as index 58 (template 19, caption 1000001), vector now 59
+[15:32:22.969] vfs  fopen  media_soviet/resources/raw_copper.nmf
+[15:32:22.970] vfs  fopen  media_soviet/resources/raw_copper.mtl
+[15:32:22.970] vfs  fopen  media_soviet/resources/raw_copper.dds
+[15:32:22.971] resource  "raw_copper" cargo meshes: 1 of 1 (open) replaced
+[15:32:22.971] resource  "raw_copper" published as index 59 (template 8, caption 1000002), vector now 60
+[15:32:22.971] vfs  fopen  media_soviet/resources/copper.nmf
+[15:32:22.972] vfs  fopen  media_soviet/resources/copper.mtl
+[15:32:22.972] vfs  fopen  media_soviet/resources/copper.dds
+[15:32:22.973] resource  "copper" cargo meshes: 1 of 1 (open) replaced
+[15:32:22.973] resource  "copper" published as index 60 (template 9, caption 1000003), vector now 61
+[15:32:22.973] === CRASH: ACCESS_VIOLATION at 00007FFE82920D04 ===
+[15:32:22.973]     A:\SteamLibrary\steamapps\common\SovietRepublic\C3DDLL64.dll + 0xB0D04
+[15:32:22.973]     reading address FFFFFFFFFFFFFFFF
+[15:32:22.973]     rax=00007FFE8291AC20 rbx=0000000000000000 rcx=3EC80AF1B7C9E71E rdx=000000FFC9AFB010
+[15:32:22.973]     rsi=3EC80AF1B7C9E71E rdi=000000FFC9AFB010 r8 =0000000000000000 r9 =0000000000000000
+[15:32:22.973]     rsp=000000FFC9AFAE60 rbp=0000000000000000 rip=00007FFE82920D04
+[15:32:22.973]     --- return addresses on the stack ---
+[15:32:22.973]       SOVIET64.exe + 0x9E11C8
+[15:32:22.973]       SOVIET64.exe + 0x9E11C8
+[15:32:22.973]       SOVIET64.exe + 0x9E11C0
+[15:32:22.973]       SOVIET64.exe + 0x9E11C8
+[15:32:22.973]       SOVIET64.exe + 0x9E11C8
+[15:32:22.973]       SOVIET64.exe + 0x9E11C0
+[15:32:22.973]       SOVIET64.exe + 0x9E1000
+[15:32:22.973]       SOVIET64.exe + 0x0
+[15:32:22.973]       SOVIET64.exe + 0x9D4F10
+[15:32:22.973]       SOVIET64.exe + 0x9D4F10
+[15:32:22.973]       SOVIET64.exe + 0x9EACD0
+[15:32:22.973]       SOVIET64.exe + 0x8A6368
+[15:32:22.973]       SOVIET64.exe + 0x9E1100
+[15:32:22.973]       SOVIET64.exe + 0x8A6000
+[15:32:22.973]       SOVIET64.exe + 0x0
+[15:32:22.973]       SOVIET64.exe + 0x8A61D0
+[15:32:22.973] === end crash report ===
+[15:32:22.976] resource  "copper2": cargo mesh load faulted - keeping the template's
+[15:32:22.976] resource  "copper2" published as index 61 (template 14, caption 1000004), vector now 62
+[15:32:22.997] game.info  Loading string --- Initializing building types
+[15:32:23.569] game.ERROR ResourceGet - not found waste
+[15:32:23.573] game.ERROR ResourceGet - not found waste
+[15:32:23.576] game.ERROR ResourceGet - not found waste
+[15:32:23.578] game.ERROR ResourceGet - not found waste
+[15:32:23.826] game.ERROR ResourceGet - not found waste
+[15:32:24.064] game.ERROR ResourceGet - not found waste
+[15:32:24.079] game.ERROR ResourceGet - not found waste
+[15:32:24.312] game.ERROR ResourceGet - not found waste
+[15:32:24.319] game.ERROR ResourceGet - not found waste
+[15:32:24.649] game.ERROR ResourceGet - not found waste
+[15:32:24.715] game.ERROR ResourceGet - not found waste
+[15:32:25.607] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\2730167346\RBMK_Coolant_Pump\building.ini
+[15:32:25.868] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\3035907116\lignite\building.ini
+[15:32:25.868] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\3035907116\zellenkuehler\building.ini
+[15:32:25.868] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\3035907116\bhkw\building.ini
+[15:32:25.919] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\3033710102\textures\building.ini
+[15:32:25.942] game.ERROR ResourceGet - not found $STORAGE_SPECIAL
+[15:32:25.943] game.ERROR ResourceGet - not found $WORKING_VEHICLES_NEEDED
+[15:32:25.978] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\3013547359\textures\building.ini
+[15:32:26.114] game.ERROR ResourceGet - not found $POLLUTION_MEDIUM
+[15:32:26.209] game.ERROR ResourceGet - not found waste
+[15:32:26.305] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\2324838287\HOUSE\building.ini
+[15:32:26.476] game.ERROR ResourceGet - not found waste
+[15:32:26.477] game.ERROR ResourceGet - not found waste
+[15:32:26.594] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\2845627877\rennwerk\building.ini
+[15:32:26.594] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\2845627877\rennwerkmuseum\building.ini
+[15:32:26.651] game.ERROR ResourceGet - not found waste
+[15:32:26.707] game.ERROR ResourceGet - not found waste
+[15:32:26.909] game.ERROR ResourceGet - not found waste
+[15:32:26.911] game.ERROR ResourceGet - not found waste
+[15:32:26.913] game.ERROR ResourceGet - not found $STORAGE_EXPORT
+[15:32:26.915] game.ERROR ResourceGet - not found $RESOURCE_VISUALIZATION
+[15:32:26.922] game.ERROR ResourceGet - not found $PARTICLE
+[15:32:26.941] game.ERROR ResourceGet - not found waste
+[15:32:27.453] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\2908202819\textures\building.ini
+[15:32:29.240] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\2315089043\HOUSE5\building.ini
+[15:32:30.452] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\2656057679\HOUSE\building.ini
+[15:32:30.671] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\2608147662\mod\building.ini
+[15:32:30.916] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\2557590870\textures\building.ini
+[15:32:31.338] game.ERROR ResourceGet - not found 1
+[15:32:31.565] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\2349750492\HOUSE3\building.ini
+[15:32:31.566] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\2349750492\HOUSE5\building.ini
+[15:32:32.638] game.ERROR ResourceGet - not found 1
+[15:32:33.576] game.ERROR Failed to open media_soviet/workshop_wip/3512915555/textures/building.ini
+[15:32:33.576] game.ERROR Failed to open media_soviet/workshop_wip/3512915555/school/building.ini
+[15:32:33.670] game.info  Loading string --- Initializing vehicle types
+[15:32:33.930] game.ERROR ResourceGet - not found cargovehicles
+[15:32:34.314] game.ERROR Failed to open media_soviet/cwc/vehicles/25d49/script.ini
+[15:32:34.314] game.ERROR Failed to open media_soviet/cwc/vehicles/32d43/script.ini
+[15:32:34.314] game.ERROR Failed to open media_soviet/cwc/vehicles/34d44/script.ini
+[15:32:34.317] game.ERROR Failed to open media_soviet/cwc/vehicles/bbo214/script.ini
+[15:32:34.318] game.ERROR Failed to open media_soviet/cwc/vehicles/bbotender/script.ini
+[15:32:34.318] game.ERROR Failed to open media_soviet/cwc/vehicles/br80/script.ini
+[15:32:34.318] game.ERROR Failed to open media_soviet/cwc/vehicles/br81/script.ini
+[15:32:34.338] game.ERROR Failed to open media_soviet/cwc/vehicles/Eseries/script.ini
+[15:32:34.338] game.ERROR Failed to open media_soviet/cwc/vehicles/Etender/script.ini
+[15:32:34.339] game.ERROR Failed to open media_soviet/cwc/vehicles/FDseries/script.ini
+[15:32:34.339] game.ERROR Failed to open media_soviet/cwc/vehicles/FDtender/script.ini
+[15:32:34.346] game.ERROR Failed to open media_soviet/cwc/vehicles/ISseries/script.ini
+[15:32:34.346] game.ERROR Failed to open media_soviet/cwc/vehicles/IStender/script.ini
+[15:32:34.350] game.ERROR Failed to open media_soviet/cwc/vehicles/ol49/script.ini
+[15:32:34.350] game.ERROR Failed to open media_soviet/cwc/vehicles/Olo1/script.ini
+[15:32:34.351] game.ERROR Failed to open media_soviet/cwc/vehicles/otuatender/script.ini
+[15:32:34.351] game.ERROR Failed to open media_soviet/cwc/vehicles/pm2/script.ini
+[15:32:34.351] game.ERROR Failed to open media_soviet/cwc/vehicles/pm3/script.ini
+[15:32:34.359] game.ERROR Failed to open media_soviet/cwc/vehicles/shared/script.ini
+[15:32:34.359] game.ERROR Failed to open media_soviet/cwc/vehicles/SoSeries/script.ini
+[15:32:34.359] game.ERROR Failed to open media_soviet/cwc/vehicles/SOtender/script.ini
+[15:32:34.359] game.ERROR Failed to open media_soviet/cwc/vehicles/SuSeries/script.ini
+[15:32:34.359] game.ERROR Failed to open media_soviet/cwc/vehicles/Sutender/script.ini
+[15:32:34.359] game.ERROR Failed to open media_soviet/cwc/vehicles/tkh491/script.ini
+[15:32:34.359] game.ERROR Failed to open media_soviet/cwc/vehicles/tkt48/script.ini
+[15:32:34.366] game.ERROR Failed to open media_soviet/cwc/vehicles/ty45/script.ini
+[15:32:34.367] game.ERROR Failed to open media_soviet/cwc/vehicles/WR360/script.ini
+[15:32:34.631] game.ERROR Failed to open media_soviet/dlc3/vehicles/MazTex/script.ini
+[15:32:34.944] game.ERROR Failed to open media_soviet/dlc3/vehicles/SaurerTex/script.ini
+[15:32:34.998] game.ERROR Failed to open media_soviet/dlc3/vehicles/textures/script.ini
+[15:32:34.998] game.ERROR Failed to open media_soviet/dlc3/vehicles/texturesH75/script.ini
+[15:32:34.998] game.ERROR Failed to open media_soviet/dlc3/vehicles/texturesRB2/script.ini
+[15:32:35.027] game.ERROR Failed to open media_soviet/dlc3/vehicles/wozki/script.ini
+[15:32:35.029] game.ERROR Failed to open media_soviet/dlc3/vehicles/YagTex/script.ini
+[15:32:35.563] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\2957347546\W115\script.ini
+[15:32:35.563] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\2957347546\W115P\script.ini
+[15:32:35.687] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\2782038889\PT76\script.ini
+[15:32:35.687] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\2782038889\T54\script.ini
+[15:32:35.689] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\2782038889\T62\script.ini
+[15:32:35.704] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\2872403723\Tram71-619\script.ini
+[15:32:36.615] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\2059633685\VL-8front2\script.ini
+[15:32:36.615] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\2059633685\VL-8back2\script.ini
+[15:32:36.725] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\2217573698\MTLBU\script.ini
+[15:32:36.995] game.ERROR Failed to open media_soviet/workshop_wip/3722084702/gaz24_taxi/script.ini
+[15:32:37.041] game.ERROR Assignment of trainbox pair failed 2548042372/BCi29Trackbuilder
+[15:32:37.041] game.ERROR Assignment of trainbox pair failed 2548042372/No704Trackbuilder
+[15:32:37.042] game.ERROR Assignment of trainbox pair failed 2548042372/No704TrackbuilderCrane
+[15:32:39.077] game.info  Loading string --- Initializing GUI models
+[15:32:39.275] game.info  Loading string --- Initializing Conveyors
+[15:32:39.423] game.info  Loading string --- Initializing Pipes
+[15:32:39.433] game.info  Loading string --- Initializing Water Pipes
+[15:32:39.447] game.info  Loading string --- Initializing Pipes
+[15:32:39.463] game.info  Loading string --- Initializing Eletrical wires
+[15:32:39.493] game.info  Loading string --- Initializing Roads
+[15:32:39.541] game.info  Loading string --- Initializing Roads secondary
+[15:32:39.565] game.info  Loading string --- Initializing Rails
+[15:32:39.618] game.info  Loading string --- Initializing Rail secondary
+[15:32:39.618] game.info  Loading string --- Initializing Runways
+[15:32:39.645] game.info  Loading string --- Initializing Pedestrian way
+[15:32:39.657] game.info  Loading string --- Initializing Factory connections
+[15:32:39.676] game.info  Loading string --- Initializing water connections
+[15:32:39.677] game.info  Loading string --- Initializing cableway connections
+[15:32:39.677] game.info  Loading string --- Initializing Heating
+[15:32:39.681] game.info  Loading string --- Initializing tools
+[15:32:41.254] game.info  Loading string --- Initializing GUI textures
+[15:32:41.283] vfs  fopen  media_soviet/resources/copper_ore.png
+[15:32:41.283] vfs  fopen  media_soviet/resources/copper_concentrate.png
+[15:32:41.284] vfs  fopen  media_soviet/resources/raw_copper.png
+[15:32:41.284] vfs  fopen  media_soviet/resources/copper.png
+[15:32:45.228] game.WARN  m_WaterErosionTerainWaterSediment 0
+[15:32:45.228] game.WARN  m_WaterErosionTerainWaterSediment 0
+[15:32:45.229] game.WARN  m_WaterErosionOutflow 0
+[15:32:45.229] game.WARN  m_WaterErosionOutflow 0
+[15:32:45.229] game.WARN  m_WaterErosionOutflowDiagonal 0
+[15:32:45.229] game.WARN  m_WaterErosionOutflowDiagonal 0
+[15:32:45.230] game.WARN  m_WaterErosionTerainWaterSedimentRT 0
+[15:32:45.230] game.WARN  m_WaterErosionTerainWaterSedimentRT 0
+[15:32:45.230] game.WARN  m_WaterErosionOutflowRT 0
+[15:32:45.230] game.WARN  m_WaterErosionOutflowRT 0
+[15:32:45.230] game.WARN  m_WaterErosionOutflowDiagonalRT 0
+[15:32:45.230] game.WARN  m_WaterErosionOutflowDiagonalRT 0
+[15:32:45.230] game.WARN  m_WaterErosionFinalTerrain 0
+[15:32:45.230] game.WARN  m_WaterErosionFinalTerrainRT 0
+[15:32:45.230] game.WARN  m_WaterErosionNormalTest 0
+[15:32:45.230] game.WARN  m_WaterErosionNormalTestRT 0
+[15:32:45.771] game.info  Loading string --- Initializing Semaphores
+[15:32:46.018] game.info  Loading string --- Preparing ambients
+[15:32:46.040] game.info  Loading string --- Importing game files - creating arrays
+[15:32:46.042] game.info  Loading string --- Import - Roads secondary
+[15:32:46.045] game.info  Loading string --- Import - Rails
+[15:32:46.046] game.info  Loading string --- Import - Rails secondary
+[15:32:46.046] game.info  Loading string --- Import - Conveyors
+[15:32:46.047] game.info  Loading string --- Import - Pipes
+[15:32:46.048] game.info  Loading string --- Import - WaterPipes
+[15:32:46.048] game.info  Loading string --- Import - Fences
+[15:32:46.049] game.info  Loading string --- Import - Heating
+[15:32:46.049] game.info  Loading string --- Import - Factory Connections
+[15:32:46.049] game.info  Loading string --- Import - Pedestrian Ways
+[15:32:46.050] game.info  Loading string --- Import - Electric wires high tension
+[15:32:46.051] game.info  Loading string --- Import - Electric wires low tension
+[15:32:46.051] game.info  Loading string --- Import - Buoys
+[15:32:46.052] game.info  Loading string --- Import - Cableway
+[15:32:46.052] game.info  Loading string --- Import - Runways
+[15:32:46.073] game.info  Loading string --- Import - Air Pollution
+[15:32:47.709] game.info  Loading string --- Import - Christmas lights
+[15:32:47.709] game.info  Loading string --- Import - Notification Messages
+[15:32:47.710] game.info  Loading string --- Import - Scripts
+[15:32:47.710] game.info  Loading string --- Import - Custom names
+[15:32:47.710] game.info  Loading string --- Import - City names
+[15:32:47.711] game.info  Loading string --- Import - Research
+[15:32:47.711] game.info  Loading string --- Import - Movies
+[15:32:47.711] game.info  Loading string --- Import - Emergency events
+[15:32:47.712] game.info  Loading string --- Import - Roads
+[15:32:47.726] game.info  Loading string --- Import - Roads secondary
+[15:32:47.806] game.info  Loading string --- Import - Rails
+[15:32:47.891] game.info  Loading string --- Import - Rails secondary
+[15:32:47.897] game.info  Loading string --- Import - Conveyors
+[15:32:47.897] game.info  Loading string --- Import - Pipes
+[15:32:47.898] game.info  Loading string --- Import - WaterPipes
+[15:32:47.899] game.info  Loading string --- Import - Fences
+[15:32:47.902] game.info  Loading string --- Import - Heating
+[15:32:47.902] game.info  Loading string --- Import - Factory Connections
+[15:32:47.902] game.info  Loading string --- Import - Pedestrian Ways
+[15:32:47.912] game.info  Loading string --- Import - Electric wires high tension
+[15:32:47.914] game.info  Loading string --- Import - Electric wires low tension
+[15:32:47.915] game.info  Loading string --- Import - Water
+[15:32:47.916] game.info  Loading string --- Import - Cableway
+[15:32:47.916] game.info  Loading string --- Import - Runways
+[15:32:47.916] game.info  Loading string --- Import - Semaphores
+[15:32:47.916] game.info  Loading string --- Import - Buildings game
+[15:32:47.942] game.info  Loading string --- Import - Road junctions
+[15:32:47.943] game.info  Loading string --- Import - Vehicles
+[15:32:47.943] game.info  Loading string --- Import - Lines
+[15:32:47.943] game.info  Loading string --- Import - Workers
+[15:32:48.106] game.ERROR Failed to open header for enumeration media_soviet/scenarios/clothesexport/script.ini
+[15:32:48.106] game.ERROR Failed to open header for enumeration media_soviet/scenarios/goods/script.ini
+[15:32:48.106] game.ERROR Failed to open header for enumeration media_soviet/scenarios/steelexport/script.ini
+[15:32:48.106] game.info  Loading string --- Import - Vehicle Replace tool
+[15:32:48.108] game.ERROR Read error (8) - File 'media_soviet/save\autosave2/replace_history.bin' 
+[15:32:48.111] game.info  Loading string --- Import - CO tool
+[15:32:48.112] game.info  Loading string --- Import - Verifying Roads
+[15:32:48.112] game.info  Loading string --- Import - Verifying Footpaths
+[15:32:48.112] game.info  Loading string --- Import - Verifying Railways
+[15:32:48.112] game.info  Loading string --- Import - Verifying Buildings
+[15:32:48.112] game.info  Loading string --- Import - Verifying Buildings - Step 2
+[15:32:48.112] game.info  Loading string --- Import - Electric High wires verification
+[15:32:48.112] game.info  Loading string --- Import - Electric Low wires verification
+[15:32:48.113] game.info  Loading string --- Import - Pipelines verification
+[15:32:48.113] game.info  Loading string --- Import - WaterPipes verification
+[15:32:48.114] game.info  Loading string --- Import - Fences verification
+[15:32:48.115] game.info  Loading string --- Import - Heating verification
+[15:32:48.115] game.info  Loading string --- Import - Initializing chain semaphores
+[15:32:48.115] game.info  Loading string --- Import - Vehicles Validation
+[15:32:48.115] game.info  Loading string --- Import - Check vehicles
+[15:32:48.115] game.info  Loading string --- Import - Check buildings
+[15:32:48.115] game.info  Loading string --- Import - Check vehicles - conversion to new system
+[15:32:48.115] game.info  Loading string --- Import - Emergency events verification
+[15:32:48.115] game.info  Loading string --- Import - Fixing snowplows
+[15:32:48.115] game.info  Loading string --- Import - Reconnection lamp to electric sources
+[15:32:48.116] game.info  Loading string --- Import - Christmas lights electric sources
+[15:32:48.116] game.info  Loading string --- Import - Trolley  connection to electric sources
+[15:32:48.116] game.info  Loading string --- Import - Regenerating semaphore connections
+[15:32:48.116] game.info  Loading string --- Import - Personal cars heading fix
+[15:32:48.116] game.info  Loading string --- Import - Check buildings
+[15:32:48.116] game.info  Loading string --- Import - Workers emergency events verification
+[15:32:48.116] game.info  Loading string --- Import - Adding air custom houses
+[15:32:48.116] game.info  Loading string --- Check for bad walking connections
+[15:32:48.116] game.info  Loading string --- Check for bad building railways
+[15:32:48.116] game.info  Loading string --- Import - Recalc heating or electric or water connection
+[15:32:48.117] game.info  Loading string --- Import - Workers walking to recalc
+[15:32:48.118] game.info  Loading string --- Import - Recalculating factory variable production/consumption
+[15:32:48.142] game.info  Loading string --- Import - Generating field positions
+[15:32:48.142] game.info  Loading string --- Import - Finished
+[15:32:48.144] game.info  Loading string --- Loading weathers
+[15:32:48.147] game.info  Loading string --- Creating dynamic Lines
+[15:32:48.148] game.info  Loading string --- Creating road junctions
+[15:32:48.149] game.info  Loading string --- Creating road sign zones
+[15:32:48.150] game.info  Loading string --- Game initialized
+[15:32:48.982] deplete  mine tick runs on thread 10712 (render thread 29056)
+[15:32:49.279] texel  resourcemap.dds (584,802) -> 00000069   NEW SITE from SOVIET64.exe + 0x6EABE2A3E
+[15:32:49.279] texel  resourcemap.dds (585,802) -> 00000083   from SOVIET64.exe + 0x6EABE2A3E
+[15:32:49.279] texel  resourcemap.dds (586,802) -> 00000088   from SOVIET64.exe + 0x6EABE2A3E
+[15:32:49.279] texel  resourcemap.dds (580,803) -> 00000029   from SOVIET64.exe + 0x6EABE2A3E
+[15:32:49.279] texel  resourcemap.dds (581,803) -> 0000000C   from SOVIET64.exe + 0x6EABE2A3E
+[15:32:49.279] texel  resourcemap.dds (582,803) -> 00000000   from SOVIET64.exe + 0x6EABE2A3E
+[15:32:49.279] texel  resourcemap.dds (583,803) -> 0000001C   from SOVIET64.exe + 0x6EABE2A3E
+[15:32:49.279] texel  resourcemap.dds (584,803) -> 00000057   from SOVIET64.exe + 0x6EABE2A3E
+[15:32:49.279] texel  resourcemap.dds (585,803) -> 00000078   from SOVIET64.exe + 0x6EABE2A3E
+[15:32:49.279] texel  resourcemap.dds (586,803) -> 00000094   from SOVIET64.exe + 0x6EABE2A3E
+[15:32:49.279] texel  resourcemap.dds (587,803) -> 000000AA   from SOVIET64.exe + 0x6EABE2A3E
+[15:32:49.279] texel  resourcemap.dds (588,803) -> 000000C6   from SOVIET64.exe + 0x6EABE2A3E
+[15:32:49.279] texel  resourcemap.dds (589,803) -> 000000DC   from SOVIET64.exe + 0x6EABE2A3E
+[15:32:49.279] texel  resourcemap.dds (579,804) -> 00000059   from SOVIET64.exe + 0x6EABE2A3E
+[15:32:49.279] texel  resourcemap.dds (580,804) -> 00000038   from SOVIET64.exe + 0x6EABE2A3E
+[15:32:49.279] texel  resourcemap.dds (581,804) -> 0000000E   from SOVIET64.exe + 0x6EABE2A3E
+[15:32:49.279] texel  resourcemap.dds (582,804) -> 00000000   from SOVIET64.exe + 0x6EABE2A3E
+[15:32:49.279] texel  resourcemap.dds (583,804) -> 00000009   from SOVIET64.exe + 0x6EABE2A3E
+[15:32:49.279] texel  resourcemap.dds (584,804) -> 00000027   from SOVIET64.exe + 0x6EABE2A3E
+[15:32:49.279] texel  resourcemap.dds (585,804) -> 00000055   from SOVIET64.exe + 0x6EABE2A3E
+[15:32:49.279] texel  resourcemap.dds (586,804) -> 00000097   from SOVIET64.exe + 0x6EABE2A3E
+[15:32:49.279] texel  resourcemap.dds (587,804) -> 000000CF   from SOVIET64.exe + 0x6EABE2A3E
+[15:32:49.279] texel  resourcemap.dds (588,804) -> 000000F0   from SOVIET64.exe + 0x6EABE2A3E
+[15:32:49.279] texel  resourcemap.dds (589,804) -> 000000FE   from SOVIET64.exe + 0x6EABE2A3E
+[15:32:49.279] deplete  coal mine: 22 x 22 texel box, 54794 units under it (257854 t), quality 0.683
+[15:32:49.279] deplete  coal mine: 100.00% left, 257854 of 257854 t, quality 0.683
+[15:32:51.296] texel  resourcemap.dds (584,802) -> 00000069   NEW SITE from SOVIET64.exe + 0x6EABE2423
+[15:32:52.794] game.ERROR setfocus
+[15:33:21.599] game.ERROR setfocus
+[15:33:40.043] game.ERROR setfocus
+[15:33:49.452] deplete  coal mine: 99.89% left, 257568 of 257854 t, quality 0.682
+[15:34:53.843] deplete  coal mine: 99.80% left, 257343 of 257854 t, quality 0.682
+[15:35:07.401] game.ERROR setfocus
+[15:35:17.815] texel  resourcemap.dds (589,805) -> 000000FD   NEW SITE from SOVIET64.exe + 0x84C2
+[15:35:17.815] texel  resourcemap.dds (590,805) -> 000000FD   NEW SITE from SOVIET64.exe + 0x84E1
+[15:35:17.815] texel  resourcemap.dds (589,806) -> 000000FD   NEW SITE from SOVIET64.exe + 0x851A
+[15:35:17.815] texel  resourcemap.dds (590,806) -> 000000FD   NEW SITE from SOVIET64.exe + 0x8539
+[15:35:31.752] deplete  coal mine: 22 x 23 texel box, 33471 units under it (157511 t), quality 0.402
+[15:35:31.752] deplete  coal mine: 100.00% left, 157511 of 157511 t, quality 0.402
+[15:35:56.828] deplete  coal mine: 99.80% left, 257343 of 257854 t, quality 0.682
+[15:36:31.936] deplete  coal mine: 100.00% left, 157511 of 157511 t, quality 0.402
+[15:36:57.014] deplete  coal mine: 99.80% left, 257343 of 257854 t, quality 0.682
+[15:37:32.124] deplete  coal mine: 100.00% left, 157511 of 157511 t, quality 0.402
+[15:37:41.445] game.ERROR setfocus
+[15:37:57.200] deplete  coal mine: 99.80% left, 257343 of 257854 t, quality 0.682
+[15:38:03.690] game.ERROR setfocus
+[15:38:32.315] deplete  coal mine: 100.00% left, 157511 of 157511 t, quality 0.402
+[15:38:57.770] --- shutdown: 22 VFS redirects, 3 plugin(s) ---

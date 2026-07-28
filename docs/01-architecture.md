@@ -1,9 +1,17 @@
 # Architecture
 
 `tesmioloader` is a DLL injected into `SOVIET64.exe` at startup by a launcher.
-It never modifies a file on disk. Everything it does is one of four things, and
-they are listed here in the order you should reach for them — the earlier ones
-survive game updates far better.
+It never modifies a file on disk.
+
+It is a **host, not a mod**. The loader itself contains only infrastructure: the
+VFS, the log, the hooking techniques, the crash handler and the plugin host.
+Every feature — resources, deposit types, depletion — is a DLL in `plugins/`
+that the loader hands a versioned table of what it knows how to do. See
+[09-plugins.md](09-plugins.md).
+
+Everything either of them does to the game is one of four things, listed here in
+the order you should reach for them — the earlier ones survive game updates far
+better.
 
 ## The four techniques
 
@@ -60,9 +68,10 @@ within ±2 GB of the executable.
 ### 4. Spliced code — last resort
 
 Only when a decision is compiled into a chain of comparisons and there is no
-data to redirect. Used for exactly one thing, the deposit type — and even there
-the emitted code is generated from a config table rather than written out per
-deposit. See [05-deposits.md](05-deposits.md).
+data to redirect. Used for exactly one thing in the whole project, the deposit
+type — and even there the emitted code is generated from a config table rather
+than written out per deposit. It lives in the `deposits` plugin; see
+[05-deposits.md](05-deposits.md).
 
 ## Injection
 
@@ -90,7 +99,9 @@ like `media_soviet/...` throughout.
 | `C3DHelp_ReadFileIntoBuffer` | universal asset read — VFS |
 | `C3DHelp_CheckIfFileExist` | existence must agree with the VFS |
 | `C3DLog_PrintInfo` / `Warning` / `Error` | mirrors the game's own log into ours |
-| `C3D_LANGUAGE::GetString(int)` | captions for mod resources |
+
+`C3D_LANGUAGE::GetString(int)` is hooked too, for mod resource captions, but by
+the `resources` plugin rather than by the loader.
 
 The log functions are variadic. A `va_list` cannot be forwarded to a variadic
 callee, so the hook formats the text itself and passes the result on as `"%s"`.
@@ -104,12 +115,15 @@ That list grew one entry at a time, each after an asset was found slipping past.
 Assume it is still incomplete: when something is not being redirected, the first
 question is which opener it used.
 
-### Inline hook
+### Inline hooks
 
-`ResourceGet` at rva `0x2AA7C0`. Twenty bytes of prologue are relocated into a
-trampoline and replaced with `jmp qword ptr [rip+0]`. The prologue is compared
-byte for byte against the known build first; a mismatch aborts the hook rather
-than corrupting the process.
+The loader installs none. It provides the mechanism — `installInlineHook`
+relocates the prologue into a trampoline, writes `jmp qword ptr [rip+0]` over
+it, and compares the site against the caller's expected bytes first so a game
+update makes a hook refuse rather than corrupt the process — and the plugins use
+it: `ResourceGet` (1), the minimap (2), the terrain editor (4), the mine tick
+(1). All eight are additive: the original runs through the trampoline and the
+plugin's work is appended.
 
 ### Virtual table
 
@@ -128,23 +142,30 @@ uses them for Workshop content, and redirecting those has never been wanted.
 This is how mod resources get icons and cargo models, and how a terrain's
 deposit map is replaced without touching the shipped file.
 
-### Resource registry
+### Plugins
 
-`resources.ini` drives it. See [04-adding-resources.md](04-adding-resources.md).
+`build/plugins/*.dll` are scanned at startup and handed `TsmHost`, a versioned
+table of what the loader knows how to do: where the executable is, how to swap
+an import, how to splice a hook, how to log, how to read a config key, and a
+noticeboard for publishing interfaces to each other. The contract is
+`src/tesmio_api.h`; the mechanism and the two-phase init are in
+[09-plugins.md](09-plugins.md).
 
-### Deposit registry
+Not a sandbox. A plugin is in the same address space and can corrupt the process
+exactly as easily as the loader can. What it buys is that a feature can be
+written, rebuilt and removed without touching this file, and that shipping one
+is copying a DLL.
 
-`deposits.ini` drives it. One table feeds all three deposit subsystems — the
-code patch, the minimap layer and the editor brush — so none of them contains
-anything specific to a particular deposit, and adding one is adding a section.
-See [05-deposits.md](05-deposits.md).
+Three ship with the project:
 
-The code patch is the only place in the project that emits instructions, and it
-emits them in a loop over that table. Two consequences worth keeping: the cave
-is bounds-checked and refuses to patch anything if it would not fit, because
-the number of cases now comes from a file a user edits; and the generator is
-small enough to re-implement in Python and disassemble, which is how it should
-be verified rather than by reading the opcode arrays.
+| Plugin | What | Doc |
+|---|---|---|
+| `resources` | resources the base game does not have | [04](04-adding-resources.md) |
+| `deposits` | deposit types, the minimap layer, the editor brush | [05](05-deposits.md) |
+| `depletion` | deposits that run out | [08](08-depletion.md) |
+
+Plugins load **last**, after every import swap, so each sees a fully built
+loader. `plugins = 0` skips the folder.
 
 ### Crash reporting
 
@@ -166,7 +187,8 @@ Ghidra. Off by default — see [03-reverse-engineering.md](03-reverse-engineerin
 
 ## Configuration
 
-`tesmioloader.ini`, read once at startup, next to the DLL.
+`tesmioloader.ini`, read once at startup, next to the DLL. It is short now:
+everything a feature needs lives in that plugin's own ini.
 
 | Key | Meaning |
 |---|---|
@@ -174,27 +196,38 @@ Ghidra. Off by default — see [03-reverse-engineering.md](03-reverse-engineerin
 | `trace_filter` | substring filter for the trace |
 | `log_game` | mirror the game's own log |
 | `vfs` | enable file redirection |
-| `resourcehook` | 0 off, 1 observe, 2 observe and inject |
-| `resource_rva` | entry of `ResourceGet` |
-| `resource_vector_rva` | the resource vector |
-| `resource_capacity` | records to reserve; 0 leaves the engine's allocation alone |
 | `probe_map` | guard-page probe for the deposit map |
 | `probe_texel` | watch texel reads of the deposit maps |
-| `deposit_patch` | splice in the deposit types declared in `deposits.ini` |
-| `minimap_patch` | a minimap button and layer per declared deposit |
-| `editor_patch` | a terrain-editor brush pair per declared deposit |
+| `plugins` | scan `plugins\` and load what is there |
 | `menu_patch` | append `menu_tag` to the main menu's version line |
 | `menu_tag` | what to append; ASCII, empty leaves the line alone |
+
+Per plugin, beside its DLL:
+
+| File | Holds |
+|---|---|
+| `pluginsesources.ini` | the ResourceGet hook mode and the three RVAs it needs |
+| `plugins\deposits.ini` | which of the three deposit subsystems may touch the game |
+| `plugins\depletion.ini` | whether deposits run out, and how fast |
+
+*What* exists is still declared in the loader's own folder — `resources.ini` and
+`deposits.ini` — because those are content, not wiring.
+
+Every one of these is UTF-8 **without a BOM** and read through the ANSI profile
+API. Writing one back with PowerShell's `-Encoding UTF8` adds a BOM, the section
+header stops matching, and every setting in the file silently falls back to its
+default. This has already cost one debugging session; see
+[07-pitfalls.md](07-pitfalls.md).
 
 ## Logs
 
 Written next to the DLL, in `build/`.
 
-| File | Contents |
-|---|---|
-| `tesmioloader.log` | hooks, VFS hits, resource arming, patches, the game's own log, crashes |
-| `tesmioloader.reads.log` | file access trace |
-| `tesmioloader.resources.log` | resource enum and record hex dumps |
+| File | Contents | Written by |
+|---|---|---|
+| `tesmioloader.log` | hooks, VFS hits, plugins, patches, the game's own log, crashes | the loader, and every plugin through `TsmHost::log` |
+| `tesmioloader.reads.log` | file access trace | the loader |
+| `tesmioloader.resources.log` | resource enum and record hex dumps | the `resources` plugin |
 
 The game holds these open. Reading them while it runs needs
 `FileShare.ReadWrite`; `Get-Content` alone will report an empty file.

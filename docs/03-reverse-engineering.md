@@ -4,6 +4,10 @@ Four techniques, in the order to reach for them. Each is cheap where the one
 below it is expensive. Most of what is in [02-findings.md](02-findings.md) came
 from the first three; Ghidra was needed exactly once, and it was decisive.
 
+Everything described here lives in `tesmioloader/tools/`, and the Ghidra project
+in `tesmioloader/ghidra/proj`. Both used to sit in a session scratchpad under
+`%TEMP%`, which is not a place to keep a 295 MB analysis database.
+
 ## 1. PE structure — free, instant, no game running
 
 Import tables, export tables, sections, the exception directory. Answers
@@ -89,36 +93,67 @@ learn behaviour — hooking is faster and reflects reality.
 
 ### Headless usage
 
-No GUI needed. The analyzer imports, analyses and runs a script:
+No GUI needed, and the project is already imported and analysed. `tools/ghidra/run.bat`
+wraps the whole invocation:
 
 ```
-A:\Programs\ghidra_11.3.2_PUBLIC\support\analyzeHeadless.bat <project-dir> <project-name>
-    -import <binary>            first time only
-    -process <binary> -noanalysis    afterwards
-    -scriptPath <dir> -postScript <script.py> <args...>
+tools\ghidra\run.bat <Script.py> <script args...>
 ```
 
-First import of `SOVIET64.exe` takes a few minutes. **Keep the project** and use
-`-process ... -noanalysis` after that; subsequent scripts run in seconds.
+It opens `tesmioloader\ghidra\proj` with `-process SOVIET64.exe -noanalysis`, so
+a script runs in seconds. **Keep that project.** If it is ever lost, re-import
+once — which takes a few minutes:
 
-Invoke it through a `.bat` file with absolute paths, launched via
-`Start-Process` with `-RedirectStandardOutput`. Passing the command inline to
-`cmd /c` fails on quoting, and a relative path to the `.bat` is not found.
+```
+analyzeHeadless.bat <projdir> soviet -import "<game>\SOVIET64.exe"
+```
+
+It is 295 MB and `.gitignore`d.
+
+Run it through `cmd /c` on an absolute path, or the `.bat` is not found. Long
+runs get moved to the background; the first decompile of a very large function
+can take several minutes.
 
 ### The scripts
 
-In `<scratchpad>/ghidra/`, Jython (Python 2):
+`tools/ghidra/`, Jython (Python 2). These used to live in a session scratchpad
+and were nearly lost twice.
 
 | Script | Arguments | Purpose |
 |---|---|---|
-| `DecompTargets.py` | out.c | decompiles a fixed list of interesting functions |
+| `Xrefs.py` | out.txt, addresses… | every function referencing each address. **Start here** — it maps the call graph without decompiling anything |
 | `DecompAt.py` | out.c, addresses… | decompiles whatever contains each address |
+| `DecompTargets.py` | out.c | decompiles a fixed list of interesting functions |
 | `Callers.py` | out.c, address, limit | lists and decompiles callers of a function |
 | `Disasm.py` | out.asm, start, end | raw disassembly with bytes — required for writing a patch |
+| `DisasmMany.py` | out.asm, start:end… | the same for several ranges in one run |
+| `FindStringXrefs.py` | out.txt, string | code references to a literal |
 
-`DecompAt.py` and `Disasm.py` are the ones you will reuse. Decompiled C is
-enough to understand a decision; **writing a patch needs `Disasm.py`**, because
-you have to know the exact instruction lengths and encodings you are replacing.
+`Xrefs.py`, `DecompAt.py` and `DisasmMany.py` are the three you will reuse.
+Decompiled C is enough to understand a decision; **writing a patch, or a hook,
+needs the disassembly**, because you have to know the exact instruction lengths
+and encodings you are replacing.
+
+The mine tick was found this way in four runs: `DecompAt` on the deposit
+function, `Xrefs` on it to get five callers, `DecompAt` on the two that looked
+like building updates, then `Xrefs` again to find which building type each one
+belongs to.
+
+### Standalone tools
+
+`tools/pe/` and `tools/assets/`, ordinary Python 3, no game running:
+
+| Script | Purpose |
+|---|---|
+| `bytesat.py` | bytes at an RVA, formatted as a `k*Prologue` array. How every hook site is recorded and, after an update, how a mismatch is diagnosed |
+| `rdata.py` | a `.rdata` constant at an RVA as float, int and double |
+| `xref.py` / `xref_wide.py` | RIP-relative references to a string, narrow and wide |
+| `findstr.py` | locate a literal in `.rdata` |
+| `imports.py` | IAT slot RVA → `dll!name`, or the reverse |
+| `disasm.py` / `sovdis.py` | capstone over a known range |
+| `checkcave.py` | re-implements the patch emitter in Python and disassembles it — the way spliced code is verified |
+| `channels.py` | non-zero byte counts per colour channel of every map's `resourcemap*.dds`. Re-run after a game update before assuming a channel is still free |
+| `dds2png.py`, `tint_dxt1.py` | asset conversion and DXT1 endpoint recolouring |
 
 ### Sanity check the decompiler
 
@@ -175,4 +210,4 @@ Sequence, once `Disasm.py` output is in hand:
 5. Overwrite the site with `jmp rel32` and pad with `0x90`.
 6. `FlushInstructionCache`.
 
-Worked example: `PatchDepositType` in `src/tesmioloader.cpp`.
+Worked example: `PatchDepositType` in `plugins/deposits/deposits.cpp`.

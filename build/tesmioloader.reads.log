@@ -1,4 +1,8 @@
-fopen      media_soviet/campaign1/resourcemap.dds
-exists     campaign1/resourcemap2.dds
-CreateFileA media_soviet/saved_last/resourcemap.dds
-CreateFileA media_soviet/saved_last/resourcemap2.dds
+fopen      media_soviet/save\autosave2/resourcemap.dds
+exists     save\autosave2/resourcemap2.dds
+fopen      media_soviet/save\autosave2/resourcemap2.dds
+fopen      media_soviet/save\autosave2/resourcemap2.dds
+CreateFileA media_soviet/save/autosave3/resourcemap.dds
+CreateFileA media_soviet/save/autosave3/resourcemap2.dds
+CreateFileA media_soviet/save/autosave4/resourcemap.dds
+CreateFileA media_soviet/save/autosave4/resourcemap2.dds

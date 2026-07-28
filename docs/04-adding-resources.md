@@ -3,10 +3,16 @@
 A resource that does not exist in the base game, usable in `$PRODUCTION`,
 `$CONSUMPTION` and `$STORAGE` lines exactly like a stock one.
 
+**A plugin**: `plugins/resources/resources.cpp` builds to
+`build/plugins/resources.dll`, and deleting that DLL removes mod resources
+entirely. What exists is still declared in `resources.ini` in the loader's own
+folder — that is content; `plugins/resources.ini` holds the wiring (the hook
+mode and the three RVAs). See [09-plugins.md](09-plugins.md).
+
 ## How it works
 
 The engine keeps its resources in one `std::vector` of 832-byte records, 57 of
-them, with room for 63. `tesmioloader` claims the slot after the last live
+them, with room for 63. the plugin claims the slot after the last live
 record: it copies an existing record over the empty one, overwrites the name and
 the caption id, and moves the vector's `end` pointer forward by one. From that
 moment the game's own resolver finds the new resource by itself — nothing else
