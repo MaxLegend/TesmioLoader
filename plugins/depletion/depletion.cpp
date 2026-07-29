@@ -147,7 +147,15 @@ static const TsmDepositApi* D;
 #define MAP_RESOURCEMAP   0
 #define MAP_RESOURCEMAP2  1
 #define MAP_TERRAIN       2
-#define MAP_COUNT         3
+// Maps past the engine's two, which the `deposits` plugin creates and saves
+// itself - resourcemap3 onward. They are ordinary textures with an ordinary
+// vtable, so everything below treats them exactly as the first two; the only
+// thing they need is somebody to hand over the pointer, and that is what
+// TsmDepositApi::texture is for. Numbered after MAP_TERRAIN because that one is
+// the gravel mask and has nothing to do with the resource maps.
+#define MAP_EXTRA_FIRST   3
+#define MAP_EXTRA_MAX     8
+#define MAP_COUNT         (MAP_EXTRA_FIRST + MAP_EXTRA_MAX)
 
 typedef void   (*t_MineTick)(void*, void*);
 typedef void   (*t_MinePanel)(void*, void*, void*);
@@ -313,12 +321,24 @@ static void* TerrainObject()
     return game ? *(void**)(game + P_TERRAIN_OFF) : NULL;
 }
 
+// One deposits-registry index per extra map, filled in BuildTable. Any deposit
+// on that map will do: the texture belongs to the map, not to the deposit, and
+// TsmDepositApi::texture is the only way to reach one from here - the pointer is
+// in the deposits plugin's own table, not at an offset in the game object.
+static int g_extraSvc[MAP_EXTRA_MAX];
+
 static void* DepositTexture(int map)
 {
     if (map == MAP_TERRAIN)
     {
         void* terrain = TerrainObject();
         return terrain ? *(void**)((BYTE*)terrain + P_TERRAIN_MASK) : NULL;
+    }
+    if (map >= MAP_EXTRA_FIRST)
+    {
+        int k = map - MAP_EXTRA_FIRST;
+        if (!D || !D->texture || k >= MAP_EXTRA_MAX || g_extraSvc[k] < 0) return NULL;
+        return D->texture(g_extraSvc[k]);
     }
     BYTE* game = GameObject();
     if (!game) return NULL;
@@ -846,6 +866,8 @@ static void BuildTable()
     // validated. A section's `deplete` key is one that plugin has no use for
     // and hands through untouched: a number overrides the global figure, 0
     // exempts it. Without that plugin there are simply no mod deposits.
+    for (int k = 0; k < MAP_EXTRA_MAX; k++) g_extraSvc[k] = -1;
+
     if (!D) return;
     for (int i = 0, n = D->count(); i < n; i++)
     {
@@ -860,9 +882,26 @@ static void BuildTable()
             if (v <= 0.0) continue;                    // "deplete = 0"
             tonnes = (float)v;
         }
-        Add(dep.name, dep.type,
-            dep.map == TSM_MAP_RESOURCEMAP2 ? MAP_RESOURCEMAP2 : MAP_RESOURCEMAP,
-            dep.component, tonnes);
+
+        int map = MAP_RESOURCEMAP;
+        if (dep.map == TSM_MAP_RESOURCEMAP2) map = MAP_RESOURCEMAP2;
+        // The terrain's own mask, gravel's home, and this plugin has drained it
+        // since the day gravel was on the list - bracket, texel arithmetic and
+        // all. A mod deposit there needs no new path, only the right number.
+        else if (dep.map == TSM_MAP_TERRAIN)  map = MAP_TERRAIN;
+        else if (dep.map >= TSM_MAP_EXTRA_FIRST)
+        {
+            int k = dep.map - TSM_MAP_EXTRA_FIRST;
+            if (k >= MAP_EXTRA_MAX || !D->texture)
+            {
+                Logf("deplete  \"%s\" skipped - resourcemap%d is past what this plugin tracks",
+                     dep.name, dep.map + 1);
+                continue;
+            }
+            g_extraSvc[k] = i;
+            map = MAP_EXTRA_FIRST + k;
+        }
+        Add(dep.name, dep.type, map, dep.component, tonnes);
     }
 }
 

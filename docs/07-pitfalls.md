@@ -72,16 +72,39 @@ The first version armed once. Loading a second save left the resource in the old
 allocation, lookups returned −1, and the game crashed on the next hover. Watch
 `begin` and re-arm.
 
-## Relocating the vector breaks a second reference
+## A guess written down as a finding
 
-Setting `resource_capacity` moves the array and updates the vector at rva
-`0x9E11C0`. There is another structure sixteen bytes later holding the same base
-pointer, and it is not updated — index lookups start failing and the game
-dereferences −1.
+This section used to read:
 
-The evidence had been sitting in a memory scan from hours earlier, listing two
-containers pointing at the same base. It was read and not acted on. Relocation
-is off by default for this reason.
+> Setting `resource_capacity` moves the array and updates the vector at rva
+> `0x9E11C0`. There is another structure sixteen bytes later holding the same
+> base pointer, and it is not updated — index lookups start failing and the game
+> dereferences −1.
+
+**None of that was ever observed.** Relocation had never been run; a memory scan
+had shown two things holding the same pointer, and the consequences were
+imagined from there and written in the same voice as everything that had
+actually been debugged. The entry then justified leaving the feature off,
+capping mod resources at six, and it stood for months because it read like a
+diagnosis.
+
+What is really at `0x9E11D8` is `game+0xC2C8`, the first of 57 `Resource*` the
+engine caches for itself right behind the vector. It holds `workers`, index 0,
+so it equals `begin` **because index 0 starts where the array does** — a cached
+record, not a container, and a memory scan cannot tell the two apart. Relocation
+was already safe, because the cache is filled through `ResourceGet` and
+`EnsureArmed` runs ahead of the original; it is now also carried across
+explicitly. See [04-adding-resources.md](04-adding-resources.md).
+
+Two lessons, and the second is the general one:
+
+- **Two pointers with the same value are not two references to the same
+  object.** Ask what each one *is* before concluding one of them will dangle.
+  One `Xrefs.py` run on `0x9E11D8` would have shown a single writer and
+  seventeen readers comparing records — nothing shaped like an array base.
+- **Write down what was observed and what was inferred, differently.** Every
+  other entry in this file cost a debugging session and is worth trusting on
+  sight. This one cost a feature, and it looked identical.
 
 ## Only the icon is found by name
 
@@ -675,3 +698,43 @@ everything that maps the deposit map runs from an import hook on
 `C3D_TERRAIN::Render` — unambiguously the render thread — rate-limited so one
 Map/Unmap pair covers every mine at once. See
 [08-depletion.md](08-depletion.md).
+
+## Dpi awareness has to be claimed before anything asks
+
+`SetProcessDPIAware` in the launcher was the first line of the function that
+builds the window, and it did nothing. The window came out laid out at 96 dpi and
+bitmap-stretched by the OS on a 125 % display — legible, so easy to miss, and
+`GetDeviceCaps(LOGPIXELSY)` reported the 96 that made the scaling a no-op rather
+than reporting the truth and being ignored.
+
+**The first dpi-sensitive call in a process fixes its awareness permanently, and
+`SetProcessDPIAware` fails silently afterwards.** Something before the window —
+console attach, CRT startup, one of the profile-API reads — had already asked.
+Moving the call to the first line of `wWinMain`, before the config and before the
+search, is what made it take: `--find` then reported `dpi 120`.
+
+The check that shows which happened is one line of output. A window that is
+wrong by exactly the display's scale factor is the symptom.
+
+Two things confused the diagnosis and are worth knowing separately:
+
+- **`GetWindowRect` is virtualised to the *calling* process.** PowerShell 5.1 is
+  dpi-unaware, so it read the corrected 575×392 window back as 460×314 — the
+  designed numbers, which looked like proof that nothing had changed. The
+  geometry was right both times; only the reported units differed.
+- **`PrintWindow` renders at physical size** regardless. Sizing the bitmap from
+  a virtualised rect silently crops the bottom-right fifth, which reads exactly
+  like a layout bug — a clipped Browse button and missing buttons along the
+  bottom.
+
+## `/MANIFEST` writes a file nobody copies
+
+The launcher declares a `MANIFESTDEPENDENCY` on Common-Controls v6 in the source,
+which is what gets themed checkboxes without an `.rc`. It worked, and the reason
+was `build\tesmiolauncher.exe.manifest` — link.exe's default is to leave the
+manifest in a file *beside* the exe rather than in it. Windows honours that file,
+so nothing looks wrong until someone copies the exe on its own and the controls
+turn Win95 grey.
+
+`/MANIFEST:EMBED` puts it in the binary. Cheap, and the failure it prevents would
+only ever be reported as "looks different on my machine".

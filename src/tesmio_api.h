@@ -49,15 +49,31 @@
 // Bumped whenever anything below changes shape. The host refuses a plugin that
 // reports a different number, because a stale plugin reading a moved field
 // would corrupt the process rather than misbehave.
-#define TSM_API_VERSION 2u
+#define TSM_API_VERSION 3u
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-// deposits.ini `map`, and the two offsets into the game object they mean.
+// deposits.ini `map`, as an index: 0 is `resourcemap`, 1 is `resourcemap2`, and
+// **anything above that is a map the deposits plugin creates itself** -
+// `resourcemap3.dds`, `resourcemap4.dds` and so on, one file per index, loaded
+// beside the game's own pair and written back with them on save. So the value
+// is always `<the digit in the filename> - 1`.
+//
+// The first two live in the game object, at +0xF00 and +0xF08. The rest live
+// nowhere the engine knows about, which is why anything that needs the texture
+// asks TsmDepositApi::texture for it rather than reading an offset.
 #define TSM_MAP_RESOURCEMAP   0     // gameobj + 0xF00
 #define TSM_MAP_RESOURCEMAP2  1     // gameobj + 0xF08
+#define TSM_MAP_EXTRA_FIRST   2     // resourcemap3 and up - the loader's own
+
+// Not a resource map at all: the terrain's own material mask, at
+// terrain+0x158 - the splat map the ground textures blend through, and where
+// gravel lives. Numbered outside the maps because it behaves differently: it is
+// painted by C3D_TERRAIN::EditMask, it has to be bracketed before it can be
+// sampled, and mining it wears the ground away.
+#define TSM_MAP_TERRAIN       64
 
 // A read-only view of one deposits.ini section. `radius` is already resolved
 // from a named constant to the float the game itself uses.
@@ -67,7 +83,7 @@ typedef struct TsmDeposit
     const char* token;          // the building.ini token, $TYPE_MINE_...
     int         type;           // the deposit type number the engine keys on
     int         buildingType;   // 7 = mine
-    int         map;            // TSM_MAP_*
+    int         map;            // TSM_MAP_*, and see TSM_MAP_EXTRA_FIRST
     int         component;      // 0..3
     float       radius;
     const char* icon;
@@ -161,7 +177,7 @@ typedef struct TsmHost
 // Provided by `deposits`. deposits.ini, parsed and validated: a section that
 // would have produced a broken patch has already been dropped.
 #define TSM_SERVICE_DEPOSITS  "deposits"
-#define TSM_DEPOSITS_VERSION  1u
+#define TSM_DEPOSITS_VERSION  2u
 
 typedef struct TsmDepositApi
 {
@@ -172,6 +188,13 @@ typedef struct TsmDepositApi
     // so another plugin can carry its own per-deposit settings in the same
     // file. Null when the key is absent.
     const char* (*setting)(int index, const char* key);
+
+    // The live C3DAPI_TEXTURE this deposit's channel lives in, whichever map
+    // that is - the game object's own two included, so a caller never has to
+    // know which kind it got. NULL before a world is loaded, and a fresh
+    // pointer after every load: the maps are rebuilt with the world, so this
+    // must be asked for each time rather than cached.
+    void* (*texture)(int index);
 } TsmDepositApi;
 
 // Provided by `resources`. The mod resources published into the engine's own

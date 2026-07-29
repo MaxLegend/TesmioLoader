@@ -5,8 +5,14 @@ Its point is to prove the generated code is what it is meant to be BEFORE the
 loader ever writes a jump into the executable - the failure mode otherwise is a
 corrupted process, which is the one thing static reading is bad at catching.
 
-Two deposits are emitted, not one, so that the multi-case chaining (the rel32
-forward branches each case lands on the next) is exercised.
+Three deposits are emitted, not one, so that the multi-case chaining (the rel32
+forward branches each case lands on the next) is exercised - and so that all
+three shapes of dispatch case appear: a channel in resourcemap, one in
+resourcemap2, and one in a map the plugin creates itself, which reads its
+texture pointer out of the cave's own data instead of out of the game object.
+
+`map` here is the same 0-based index deposits.ini and DepositDef use: 0 is
+resourcemap, 1 is resourcemap2, 2 is resourcemap3 and so on.
 """
 import struct
 from capstone import Cs, CS_ARCH_X86, CS_MODE_64
@@ -32,9 +38,22 @@ P_RADIUS_WATERSURF = 0x90AC38
 
 CAVE_CODE = 0x800
 
+DEP_MAP_EXTRA   = 2             # resourcemap3 and up - the plugin's own
+DEP_MAP_TERRAIN = 64            # the terrain's material mask
+
+P_TERRAIN_OFF     = 0xED8
+P_TERRAIN_MASK    = 0x158
+P_MASK_OPEN_IAT   = 0x86CF38
+P_MASK_CLOSE_IAT  = 0x86CF30
+P_MASK_OPEN_NEXT  = 0x1DD4B6
+P_MASK_CLOSE_NEXT = 0x1DDE25
+
 DEPOSITS = [
-    dict(name="copper", token="$TYPE_MINE_COPPER", type=10, map=2, component=3, btype=7),
-    dict(name="tin",    token="$TYPE_MINE_TIN",    type=11, map=1, component=3, btype=7),
+    dict(name="copper", token="$TYPE_MINE_COPPER", type=10, map=1, component=3, btype=7),
+    dict(name="tin",    token="$TYPE_MINE_TIN",    type=11, map=0, component=3, btype=7),
+    dict(name="nickel", token="$TYPE_MINE_NICKEL", type=12, map=2, component=0, btype=7),
+    dict(name="sand",   token="$TYPE_MINE_SAND",   type=13, map=DEP_MAP_TERRAIN,
+         component=1, btype=7),
 ]
 
 
@@ -79,15 +98,22 @@ def parser_case(e, d, token_addr):
     e.land(nxt)
 
 
-def dispatch_case(e, d):
+def dispatch_case(e, d, map_slot):
     e.b(0x83, 0xBE); e.d32(P_DEP_TYPE_FIELD); e.b(d["type"])
     nxt = e.jne32()
     e.b(0xF2, 0x0F, 0x10, 0x44, 0x24, 0x40)
     e.b(0xF2, 0x0F, 0x11, 0x45, 0x38)
     e.b(0x8B, 0x44, 0x24, 0x48)
     e.b(0x89, 0x45, 0x40)
-    e.b(0x4C, 0x8B, 0x0D); e.rel32(EXE_BASE + P_GAMEOBJ)
-    e.b(0x4D, 0x8B, 0x89); e.d32(P_MAP2_OFF if d["map"] == 2 else P_MAP1_OFF)
+    if map_slot is not None:
+        e.b(0x4C, 0x8B, 0x0D); e.rel32(map_slot)
+    elif d["map"] == DEP_MAP_TERRAIN:
+        e.b(0x4C, 0x8B, 0x0D); e.rel32(EXE_BASE + P_GAMEOBJ)
+        e.b(0x4D, 0x8B, 0x89); e.d32(P_TERRAIN_OFF)
+        e.b(0x4D, 0x8B, 0x89); e.d32(P_TERRAIN_MASK)
+    else:
+        e.b(0x4C, 0x8B, 0x0D); e.rel32(EXE_BASE + P_GAMEOBJ)
+        e.b(0x4D, 0x8B, 0x89); e.d32(P_MAP2_OFF if d["map"] == 1 else P_MAP1_OFF)
     e.b(0x4C, 0x8D, 0x45, 0x38)
     e.b(0x48, 0x8D, 0x95); e.d32(0xB0)
     e.b(0xE8); e.rel32(EXE_BASE + P_SAMPLER)
@@ -95,6 +121,24 @@ def dispatch_case(e, d):
     e.b(0xF3, 0x0F, 0x11, 0x44, 0x24, 0x5C)
     e.b(0xE9); e.rel32(EXE_BASE + P_DISPATCH_TAIL)
     e.land(nxt)
+
+
+def mask_bracket(e, iat, rejoin):
+    land = []
+    for d in DEPOSITS:
+        if d["map"] != DEP_MAP_TERRAIN:
+            continue
+        e.b(0x83, 0xBE); e.d32(P_DEP_TYPE_FIELD); e.b(d["type"])
+        e.b(0x0F, 0x84); land.append(len(e.buf)); e.d32(0)
+    e.b(0x83, 0xBE); e.d32(P_DEP_TYPE_FIELD); e.b(3)
+    skip = e.jne32()
+    for at in land:
+        e.land(at)
+    e.b(0x48, 0x8B, 0x0D); e.rel32(EXE_BASE + P_GAMEOBJ)
+    e.b(0x48, 0x8B, 0x89); e.d32(P_TERRAIN_OFF)
+    e.b(0xFF, 0x15); e.rel32(EXE_BASE + iat)
+    e.land(skip)
+    e.b(0xE9); e.rel32(EXE_BASE + rejoin)
 
 
 def radius_case(e, d, slot):
@@ -115,7 +159,23 @@ data = (data + 3) & ~3
 for d in DEPOSITS:
     radii.append(data)
     data += 4
+
+# One qword per map past the engine's two, written at every world load with the
+# texture the deposits plugin created for it.
+extra = max([d["map"] - DEP_MAP_EXTRA + 1 for d in DEPOSITS
+             if DEP_MAP_EXTRA <= d["map"] < 10] + [0])
+data = (data + 7) & ~7
+map_slots = []
+for k in range(extra):
+    map_slots.append(data)
+    data += 8
 assert data < CAVE + CAVE_CODE, "data region overflowed"
+
+
+def slot_of(d):
+    if not (DEP_MAP_EXTRA <= d["map"] < 10):
+        return None
+    return map_slots[d["map"] - DEP_MAP_EXTRA]
 
 # --- code ---------------------------------------------------------------
 e = Emit(CAVE + CAVE_CODE)
@@ -134,7 +194,7 @@ e.b(0xE9); e.rel32(EXE_BASE + P_PARSER_DONE)
 
 dispatch_cave = e.here
 for d in DEPOSITS:
-    dispatch_case(e, d)
+    dispatch_case(e, d, slot_of(d))
 e.b(0x83, 0xBE); e.d32(P_DEP_TYPE_FIELD); e.b(0x06)
 e.b(0x0F, 0x85); e.rel32(EXE_BASE + P_DISPATCH_TAIL)
 e.b(0xE9); e.rel32(EXE_BASE + P_DISPATCH_BODY6)
@@ -150,12 +210,20 @@ for i, d in enumerate(DEPOSITS):
 e.b(0x0F, 0x57, 0xC0)
 e.b(0xC3)
 
+mask_open_cave = e.here
+mask_bracket(e, P_MASK_OPEN_IAT, P_MASK_OPEN_NEXT)
+mask_close_cave = e.here
+mask_bracket(e, P_MASK_CLOSE_IAT, P_MASK_CLOSE_NEXT)
+
 print("cave %#x  data ends %#x  code %#x..%#x  (%d bytes used of %#x)"
       % (CAVE, data, CAVE + CAVE_CODE, e.here, e.here - CAVE, 0x2000))
 print("parser %#x   dispatch %#x   radius %#x\n" % (parser_cave, dispatch_cave, radius_cave))
 
-labels = {parser_cave: "PARSER", dispatch_cave: "DISPATCH", radius_cave: "RADIUS"}
+labels = {parser_cave: "PARSER", dispatch_cave: "DISPATCH", radius_cave: "RADIUS",
+          mask_open_cave: "MASK OPEN", mask_close_cave: "MASK CLOSE"}
 named = {
+    EXE_BASE + P_MASK_OPEN_NEXT: "mask_open_next",
+    EXE_BASE + P_MASK_CLOSE_NEXT: "mask_close_next",
     EXE_BASE + P_STRCMP: "strcmp",
     EXE_BASE + P_PARSER_NEXT: "parser_next_token",
     EXE_BASE + P_PARSER_DONE: "parser_done",
@@ -165,6 +233,8 @@ named = {
 }
 tokmap = {a: DEPOSITS[i]["token"] for i, a in enumerate(tokens)}
 radmap = {a: DEPOSITS[i]["name"] + ".radius" for i, a in enumerate(radii)}
+radmap.update({a: "resourcemap%d texture" % (DEP_MAP_EXTRA + k + 1)
+               for k, a in enumerate(map_slots)})
 
 md = Cs(CS_ARCH_X86, CS_MODE_64)
 md.detail = False

@@ -1,15 +1,18 @@
 # Adding a resource
 
-> **How many fit.** The engine allocates 63 records and fills 57, so **six mod
-> resources fit without moving anything**. Past that, `resource_capacity` in
-> `plugins/resources.ini` makes the plugin reallocate the vector the way
-> `reserve()` would — a bigger block from the process heap, the records copied
-> in, the vector's three pointers repointed, the old block deliberately left
-> allocated (`RelocateResourceArray`). That path is written and **has never been
-> exercised**, and the caveat beside it now has a worked example behind it: the
-> resource vector is not the only thing sized against the base game's fixed set.
-> See the purchase bucket in [07-pitfalls.md](07-pitfalls.md), which a modded
-> good walked into the first time one was ever bought.
+> **How many fit: as many as `[list]` declares.** The engine allocates 63
+> records and fills 57, so six fit in its own buffer; past that the plugin
+> reallocates the vector the way `reserve()` would — a bigger block from the
+> process heap, the records copied in, the vector's three pointers repointed,
+> the old block deliberately left allocated (`RelocateResourceArray`). **The
+> size is worked out from `[list]`**, not configured; `resource_capacity` is
+> only a floor, and `-1` turns the growth off. See
+> [Growing the array](#growing-the-array).
+>
+> What that does *not* lift is everything else sized against the base game's
+> fixed set of resources. See the purchase bucket in
+> [07-pitfalls.md](07-pitfalls.md), which a modded good walked into the first
+> time one was ever bought.
 
 A resource that does not exist in the base game, usable in `$PRODUCTION`,
 `$CONSUMPTION` and `$STORAGE` lines exactly like a stock one.
@@ -172,19 +175,60 @@ $STORAGE_EXPORT RESOURCE_TRANSPORT_GRAVEL 50.00
 
 The storage class must match the resource's own.
 
-## Limits
+## Growing the array
 
-**Six mod resources** fit in the engine's allocation — slots 57 to 62. Beyond
-that the vector has to be relocated: set `resource_capacity` in
-`tesmioloader.ini` to the number of records you want and the loader will move
-the array, copying the existing records and repointing the vector.
+Six mod resources fit in the engine's own allocation — slots 57 to 62. **The
+seventh and everything after it come from moving the array**, and the plugin
+does that by itself: `NeededCapacity` is `57 + <entries in [list]>`, and if the
+vector in front of it has less room than that, `RelocateResourceArray` runs.
 
-Relocation works but is **incomplete and off by default**. At least two
-structures hold the array base — one at rva `0x9E11C0`, another sixteen bytes
-later at `0x9E11D8` — and only the first is updated. The second keeps pointing
-at the old buffer, index lookups start returning −1, and the game dereferences
-that without checking. Before raising the capacity, enumerate every reference to
-the base and update all of them.
+`resource_capacity` in `plugins/resources.ini` is a **floor**, not the switch it
+used to be:
+
+| Value | Meaning |
+|---|---|
+| `0` | the default — size the array from `[list]` |
+| `N` | the same, but never fewer than `N` records |
+| `-1` | never move the array; the seventh mod resource is refused |
+
+Three things make the move safe, and all three are worth knowing before touching
+this code.
+
+**It happens on the very first lookup of the session.** `EnsureArmed` runs
+*before* the original `ResourceGet`, so the first name the engine ever resolves
+already comes out of the new buffer. Nothing holds a `Resource*` at that moment:
+the resource table at `0x2A1D60` builds each record in a stack buffer and
+pushes it, and the building-type parser has not started.
+
+**The engine's own record cache is carried across.** Immediately after building
+the array, the engine resolves about forty names by hand and stores what it gets
+in `game+0xC2C8`…`+0xC488`, directly behind the vector object — see
+[02-findings.md](02-findings.md). The first entry is `workers`, index 0, so it
+equals `begin` exactly; that is the "second structure holding the array base"
+this document used to warn about. `RebaseResourceCache` walks the block and
+moves any pointer that lands on a record boundary inside the old buffer.
+Normally it moves nothing, because the cache is still zero at that point, and
+the count it logs is a check on the ordering above rather than a repair.
+
+**It happens once per process.** A map load *clears* the vector rather than
+destroying it — `end = begin` — so the raised capacity survives every later
+world, and the 57 base records are pushed straight back into the enlarged block.
+The old buffer is leaked on purpose: tens of kilobytes, once, against any chance
+of freeing memory the engine still believes it owns.
+
+The plugin refuses to move an array that already holds one of its own records,
+because by then the building-type parser has taken pointers into it. That cannot
+happen in the normal order and the guard exists to keep it that way — if the log
+ever shows `not moving the array now`, the ordering has changed and the reason
+is worth finding before raising anything.
+
+## Other limits
+
+**`[list]` holds 256 names.** `RES_MAX_ENTRIES` in
+`plugins/resources/resources.cpp`, and nothing in the engine chooses it — it is
+the size of the plugin's own registry, about 220 bytes an entry. Past it the
+extra lines are ignored and the log says so. The `.ini` is read whole, however
+long it is.
 
 **Saves are not interchangeable.** The resource count is part of the save
 format. A save written with two mod resources will not load without them.
@@ -201,15 +245,21 @@ Everything lands in `tesmioloader.log`:
 registry  "copper_ore" -> next free slot, template 18, text id 1000000
 resource  array now at 000001C02B72E020
 resource  name field at +0x0, 57 live records, room for 63
+resource  array moved 000001C02B72E020 -> 000001C02C0A0040, capacity 66 records (57 live)
 resource  "copper_ore" published as index 57 (template 18, caption 1000000), vector now 58
 ```
+
+The `array moved` line appears once per session and only when `[list]` needs
+more than the engine's 63 records.
 
 Symptoms and causes:
 
 | Symptom | Cause |
 |---|---|
 | no `registry` lines at all | `plugins\resources.ini` not found, its `[list]` section is missing, or `hook` is not 2 — check the .ini has no BOM |
-| `slot N unusable (M live…)` | wrong slot number in `[list]` |
+| `slot N is taken (M live)` | wrong slot number in `[list]` |
+| `no room at index N` | `resource_capacity` is `-1`, or the reallocation failed — the line says which |
+| `cached record pointer(s) rebased` | the array moved later than it should have. Nothing is broken, but the ordering in `EnsureArmed` has changed and is worth checking |
 | storage shows `0.00 of 0.00 t` | transport class mismatch between storage and template |
 | caption is the template's | no caption given, or `GetString` hook failed to install |
 | icon is a random image | icon file missing, or the VFS did not serve it — check for `vfs fopen` in the log |

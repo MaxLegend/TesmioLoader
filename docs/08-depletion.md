@@ -11,6 +11,14 @@ rate for the rest of the game. Nothing ever writes the richness back down.
 This makes it finite with **one inline hook and no code patch** — every part it
 needs already exists in the executable and only had to be joined up.
 
+> **Maps past the engine's two.** A deposit on `resourcemap3` or above is
+> drained exactly like one on the game's own pair — same bracket, same texel
+> arithmetic — but its texture is not at an offset in the game object, so it
+> comes from `TsmDepositApi::texture` instead. `MAP_EXTRA_FIRST` in
+> `depletion.cpp` is where that numbering starts, and `g_extraSvc` is the one
+> registry index per map that reaches the accessor. See
+> [05-deposits.md](05-deposits.md).
+
 It is on when the plugin is present (`enabled = 1` in `plugins/depletion.ini`).
 Worth knowing before playing a save you care about: it changes game balance, and
 once a map has been mined the change is in the terrain's own `resourcemap`,

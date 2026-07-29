@@ -23,17 +23,49 @@ callbacks. No anti-tamper, no anti-cheat, no packer anywhere.
 
 ### The vector
 
-A global `std::vector` of fixed-size records in `.data`.
+A `std::vector` of fixed-size records, and **a field of the game object rather
+than a free-standing global**: `ResourceGet` reads it out of `self + 0xC2B0`,
+and the game object is the static at rva `0x9D4F10`, so
+`0x9D4F10 + 0xC2B0 == 0x9E11C0`. That is why no instruction in `.text` computes
+`0x9E11C0` RIP-relatively from inside `ResourceGet` — every access is through
+`rcx`.
 
 | | |
 |---|---|
-| vector object | rva `0x9E11C0` — `{ begin, end, capacity }`, three pointers |
+| game object | rva `0x9D4F10` — not `0x9941F0`, which is a different object |
+| vector object | rva `0x9E11C0` = `game+0xC2B0` — `{ begin, end, capacity }` |
 | record stride | 832 bytes (`0x340`) |
 | live records | 57 |
-| capacity | 63 |
+| capacity | 63 — MSVC's growth sequence 1,2,3,4,6,9,13,19,28,42,**63** after 57 `push_back`s |
 
-The array is heap-allocated and **rebuilt at every map load** at a fresh address.
-Anything caching a record pointer must notice `begin` changing.
+The array is heap-allocated. **A map load clears it rather than destroying it**
+— `end = begin` at rva `0x25EC7A` — so `begin` and the capacity survive, the 57
+records are pushed back into the same block, and anything that raised the
+capacity once keeps it for the rest of the session. `begin` does change when the
+allocation is replaced, so it is still the thing to watch; it is not the thing
+that changes on every load.
+
+The three pointers are written by exactly one function outside the vector's own
+growth: `0x25D4B0`, which zeroes them at `0x25D79E`/`0x25D7A6` and clears at
+`0x25EC73`.
+
+### The record cache behind the vector
+
+`game+0xC2C8`…`+0xC488` — **57 qwords of `Resource*`, filled one `ResourceGet`
+call at a time** by a straight run of code at rva `0x2A82B0`, immediately after
+the array is built. These are the records the engine wants by hand rather than
+by lookup.
+
+Fifty-three point into the array. The first, `game+0xC2C8` = rva `0x9E11D8`, is
+`workers` — index 0 — so it is **bit-for-bit equal to `begin`**, which is what
+made an earlier memory scan report "two containers holding the array base". It
+is not a container; it is a cached record. The other four —
+`+0xC3B8`, `+0xC3C0`, `+0xC418`, `+0xC420` — are the standalone records
+`ResourceGet` compares against before scanning anything, and never point into
+the array.
+
+Anything that moves the array has to carry this block with it. `resources`
+does, in `RebaseResourceCache`.
 
 ### Record layout
 
@@ -76,8 +108,21 @@ script VM's view only, not spare capacity in the engine.
 
 ```
 rva 0x2AA7C0, 735 bytes
-Resource* ResourceGet(void* self, const char* name, ...)
+Resource* ResourceGet(GameObject* self, const char* name, ...)
 ```
+
+Two passes, in this order:
+
+1. Four **standalone** records — `self+0xC3B8`, `+0xC3C0`, `+0xC418`, `+0xC420`
+   — gathered into a throwaway vector and compared by name. These are the
+   objects that are in the script VM's `Resources` struct but not in the array:
+   `waste_mixed`, `service_material` and two more.
+2. The array at `self+0xC2B0`, walked with `strcmp` against each record's inline
+   name, stride `0x340`.
+
+So the resolver is a **linear name scan, not a map** — which is exactly why
+appending a record and moving `end` is enough to make a new resource resolvable,
+and why nothing else has to be intercepted.
 
 Returns a pointer to the record, `NULL` when unknown, and logs
 `"ResourceGet - not found %s"` (format string at rva `0x8A6B00`, exactly one
@@ -194,6 +239,35 @@ The maps are **only ever textures**. The loader calls
 get a CPU-reachable copy; nothing parses the pixels into another structure. On
 save they are written back with `SaveToDDS`, which is how depletion persists.
 
+### Creating and saving them
+
+Four calls, and there is nothing else to a resource map. The world loader at
+`0x5920` takes the folder in **rdx** and does, per map:
+
+| RVA | Call |
+|---|---|
+| `0x7B1A` | `CreateManagedTexture(*(void**)gameobj, "<folder>/resourcemap.dds")` |
+| `0x7B4E` | `tex->vtbl[2](tex, path, 0, 0, 0, 0)` — `Load2DFromFile` |
+| `0x7B5C` | `tex->vtbl[19](tex)` — `TextureAccessInitTempResource` |
+
+then `[gameobj+0xF00]` or `[gameobj+0xF08]` takes the result. `resourcemap2`
+alone has a fallback: `C3DHelp_CheckIfFileExist` on its path, and the bare
+`resourcemap2default.dds` when it is missing — **so `resourcemap`'s is the only
+one of the two paths that always carries the folder name.**
+
+The saver at `0x7C20` takes the same folder in `rdx` and is four
+`tex->vtbl[36](tex, "<folder>/....dds")` calls — `SaveToDDS` — for `farmap`, the
+emissive map and both deposit maps.
+
+That is the whole contract, which is why a **third** map needs no engine support
+at all: repeat those four calls and hand the pointer to a sampler that already
+takes one. `deposits` does exactly that for `resourcemap3` upward — see
+[05-deposits.md](05-deposits.md).
+
+`resourcemap2default.dds` is **not** a blank: 1024×1024 like the rest, and
+components 0, 1 and 2 carry a stock uranium and bauxite layout. Only its alpha
+is clear.
+
 ### Type numbers
 
 From the .ini parser and the type-to-name function:
@@ -252,8 +326,8 @@ Defaults `tex` to `[gameobj+0xF00]` when null. Converts world position through
 
 | RVA | What |
 |---|---|
-| `0x5920`–`0x7C1B` | world loader; creates both deposit map textures |
-| `0x7C20`–`0x7D1A` | writes `farmap`, `emissivemap` and both deposit maps via `SaveToDDS` |
+| `0x5920`–`0x7C1B` | world loader; creates both deposit map textures. Folder in `rdx` |
+| `0x7C20`–`0x7D1A` | writes `farmap`, `emissivemap` and both deposit maps via `SaveToDDS`. Folder in `rdx` |
 | `0xBFFF4` | deposit type → token name, knows exactly the seven texture-backed types |
 | `0x10E200` | `building.ini` parser, 62 979 bytes; mine-type branches from `0x10EAC8` |
 | `0x1DCA70` | deposit type → **search radius**, 111 bytes, returns in `XMM0` |
@@ -330,6 +404,72 @@ woodcutting-specific. The ones that matter so far:
 This scan is the fastest way to check whether a new deposit type is missing an
 entry somewhere: add the type, then look for symptoms in whichever of these has
 not been taught about it.
+
+### The red terrain overlay
+
+Painting a deposit in the editor turns the terrain grid red where the channel is
+rich. It is a render pass of its own inside `FUN_14000aee0` (rva `0xAEE0`,
+called from exactly one place, `0x482824`, with no arguments at all), and it is
+driven by **six bytes in the game object**:
+
+| Byte | Deposit | Map | Component | `SelectedResources` |
+|---|---|---|---|---|
+| `+0x23` | coal | `resourcemap` | 2 | (0,0,1,0) at `0x90BDF0` |
+| `+0x24` | iron | `resourcemap` | 1 | (0,1,0,0) at `0x90BDA0` |
+| `+0x25` | oil | `resourcemap` | 0 | (1,0,0,0) at `0x90BD80` |
+| `+0x26` | uranium | `resourcemap2` | 0 | (1,0,0,0) |
+| `+0x27` | bauxite | `resourcemap2` | 1 | (0,1,0,0) |
+| `+0x28` | — | `resourcemap2` | 2 | (0,0,1,0) |
+
+**There is no seventh byte**: component 3 of either map has no flag, which is
+why a copper brush painted a channel nothing drew. The pass takes the *first*
+flag set in each group, swaps the terrain's mask texture (`terrain+0x158`) for
+the map, binds the `Resources` technique and renders. Its pixel shader is four
+instructions:
+
+```hlsl
+float a = dot(SelectedResources, tex.Sample(uv));   // dp4
+o = float4(1,1,1,1) + a * float4(1.5,-1,-1,0);      // white -> red
+```
+
+A `dp4` again, so component 3 was always reachable. `0x2350D0` sets its own byte
+on the way past, which is what makes the overlay appear the moment you paint.
+
+### The terrain material mask
+
+Gravel is not in a resource map. It is component 2 of the **terrain's own mask**
+at `terrain+0x158`, and the editor's Rocks tab paints the same mask:
+
+| Tool | Call | `EditMask` channel | Component |
+|---|---|---|---|
+| `paint_rock` / `erase_rock` | `0x235300(self, mode)` | 3 | 2 — gravel's |
+| `paint_oasis` / `erase_oasis` | `0x235510(self, mode)` | 0 | 3 |
+
+```
+C3D_TERRAIN::EditMask(terrain, &pos, channel, innerR, outerR, delta, limit, true)
+```
+
+Both functions are the same code with one constant changed, and the channel
+encoding is the deposit brush's: `channel = (component + 1) & 3`. The Rocks tab
+itself is `0x22EE30`; the dispatcher entries are at `0x312CE6` and `0x312D08`.
+
+Gravel's dispatch is **not** in the type chain at `0x1DD773`. It is two separate
+sites in the same function:
+
+| RVA | What |
+|---|---|
+| `0x1DD499` | `if (type == 3) MaskTextureOpen(terrain)` — the bracket, once per scan |
+| `0x1DD907` | the sample: `r9 = [terrain+0x158]`, sampler, `movss xmm0,[rax+8]` (component 2) |
+| `0x1DDE08` | a third `cmp type,3` — the close |
+
+Its sample block writes the same `[rsp+0x5C]` the type-6 block does and takes the
+position from `xmm7`/`ebx` rather than `[rsp+0x40]`, but those hold the same
+value — so a mask deposit **can** be emitted as an ordinary case in the
+`0x1DD773` chain with one substitution, `mov r9,[gameobj]; mov r9,[r9+0xED8];
+mov r9,[r9+0x158]`. What it cannot inherit is the bracket, and opening the mask
+per sample point would be a GPU `Map`/`Unmap` per point — the mistake
+[07-pitfalls.md](07-pitfalls.md) already records. A fourth patch site at
+`0x1DD499` is the way in.
 
 ### Painting deposits — the engine's own brush
 
@@ -762,15 +902,60 @@ file is effectively a header for the engine's resource order, and the
 ## Language files
 
 `media_soviet/soviet<Language>.btf`, twenty-one of them plus
-`sovietComments.btf`. Big-endian throughout:
+`sovietComments.btf`. Big-endian throughout, **the payload included**:
 
 ```
 u32 count
-u32 file size
-u32 (offset of something after the payload)
-count * { u32 id, u32 offset into the payload, u16 length in bytes }
-UTF-16LE payload
+u32 file size in bytes
+u32 payload length in UTF-16 code units
+count * { u32 id, u32 offset, u16 length }        <- 10 bytes on disk
+payload: <payload length> UTF-16BE code units
 ```
+
+`file size == 12 + count * 10 + payload length * 2`, exactly, for all
+twenty-one files — there is no padding and no trailing anything.
+
+**Offset and length are in code units, not bytes.** Entry 0 is `{off 0, len 6}`
+and entry 1 is `{off 7, len 5}`: both fields have to be doubled to index the
+payload, and the one unit between two strings is a NUL that `length` excludes.
+Reading them as byte counts gives text that is shifted and truncated, which
+looks like a different header layout and is not. Strings sit back to back in
+entry order with **no de-duplication** — two entries with the same text each get
+their own copy — which is why rebuilding a file from its entries reproduces it
+byte for byte.
+
+That is `C3D_LANGUAGE::Initialize(char *file, char *fallback)`, `C3DDLL64.dll`
+rva `0x96A50`: three `fread(&field, 4, 1, f)`, then `count` iterations of
+`fread(id, 4, 1)` / `fread(off, 4, 1)` / `fread(len, 2, 1)`, then one
+`fread(payload, 2, payloadUnits, f)`. Every field is byte-swapped afterwards by
+hand, the payload one code unit at a time — an open-coded `bswap` chain of
+`sar`/`movzx`/`shl`, which is what makes the file big-endian on a little-endian
+machine. The entry array is `malloc(count * 12)` — 12 in memory, 10 on disk —
+and the payload `malloc(payloadUnits * 2)`, so **nothing caps the entry count**:
+a rebuilt file may carry more entries than the original.
+
+`C3D_LANGUAGE::GetString(int id)` is rva `0x97F10`, and three things in it
+matter when writing a file rather than reading one:
+
+- **The lookup is a linear scan** over the entry array, first match wins. Ids
+  therefore need not be sorted — and in the shipped files they are not — but a
+  duplicate id makes every copy after the first unreachable.
+- **`length` is not used to fetch the text.** `GetString` takes the offset and
+  scans forward to the NUL; `length` is what `GetStringLength` (`0x98080`)
+  returns. A wrong `length` is therefore invisible in most of the UI, which is
+  exactly the kind of thing that stays broken for a year.
+- **An empty string counts as missing.** After the NUL scan `GetString` rejects
+  a zero-length result and falls through to the fallback file — the second
+  argument of `Initialize`, `sovietEnglish.btf` for every language, which is
+  what the `.rdata` pairs at `0x8885C5` are. Blanking an entry does not blank
+  the label, it un-translates it. A missing id ends at `lang+0x266E4`, an empty
+  string, and that is the only way to get one.
+
+Two tables are consulted before the file: a 16-byte-stride vector at
+`lang+0x26740` that `ChangeStringsWithID` fills, and — for a **negative** id —
+`~id` as an index into the runtime custom-string vector at `lang+0x26720`, which
+is what `CustomStringAdd` returns a handle into. Negative ids are never in a
+file.
 
 `sovietEnglish.btf` has 7906 entries. **Ids run 300 to 580231**, sparsely, and
 twenty of the twenty-one full translations end at exactly 580231. Workshop
@@ -778,6 +963,14 @@ buildings that use `$NAME <id>` draw from the same space and stay under 8000.
 
 Anything the loader mints for itself has to sit above 580231 — see
 [07-pitfalls.md](07-pitfalls.md) for what happened when it did not.
+
+`tools/assets/btf.py` reads, unpacks, rebuilds and patches these files;
+`selftest` round-trips all twenty-one byte for byte and is the check to re-run
+after a game update. Because the loader patches `fopen` in **C3DDLL64.dll's own
+import table** as well as the executable's, and `Initialize` opens the file with
+`fopen`, a rebuilt language file ships as
+`tesmioloader/vfs/media_soviet/soviet<Language>.btf` and no game file is
+touched.
 
 ## Materials
 

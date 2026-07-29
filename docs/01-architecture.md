@@ -98,6 +98,58 @@ launcher's own `LoadLibraryW` address is valid in the target.
 The working directory is set to the game folder: the game uses relative paths
 like `media_soviet/...` throughout.
 
+### Finding the game
+
+The launcher used to assume one path, `<self>\..\..\SOVIET64.exe`, which is only
+right when `tesmioloader\build\` is inside the game folder. Putting the folder
+anywhere else — a common enough mistake — produced `game not found` and nothing
+else to go on. Four strategies now run in order, and the first one that yields a
+believable install wins:
+
+| Order | Strategy | Catches |
+|---|---|---|
+| 1 | `--game <exe or folder>` | someone who knows where it is |
+| 2 | `game_exe` in `tesmioloader.ini` | the path the window saved last time |
+| 3 | walk up from the launcher, looking one folder deep at each level | the folder put beside the game rather than inside it |
+| 4 | Steam: registry `SteamPath` → `libraryfolders.vdf` → `appmanifest_784150.acf` → `installdir` | the folder put anywhere at all |
+
+**A folder is only believed when `SOVIET64.exe` is in it beside `C3DDLL64.dll` or
+`media_soviet`.** The exe name alone would also match a stray copy in someone's
+Downloads, and injecting into that fails in a way nobody can read. Two acceptable
+witnesses rather than one, because a Steam verify can be mid-flight.
+
+Strategy 3 walks up at most 8 levels and looks exactly **one** level down at
+each. One level is what the "beside instead of inside" case needs; a recursive
+scan would be a way to walk someone's whole drive while they wait.
+
+Strategy 4 never guesses the folder name — it finds the library that holds the
+game's app manifest and reads `installdir` out of it, falling back to a scan of
+that library's `steamapps\common` if the manifest is there but the folder moved.
+
+`--find` runs all of it, prints what resolved, and exits without writing or
+starting anything. It is the only way to see the losing strategies, since the
+winner is the only one that leaves a trace once the game is up.
+
+### The window
+
+`tesmiolauncher.exe` is `/SUBSYSTEM:WINDOWS` and shows a small dialog: the
+resolved game path with a Browse button, a checkbox per plugin, and Launch.
+`--nogui` skips it and behaves exactly as the program did before.
+
+Plain Win32, controls created by hand — `build.bat` compiles one `.cpp` per
+binary and an `.rc` would put a second tool in that chain. Themed controls come
+from a `MANIFESTDEPENDENCY` on Common-Controls v6 declared in the source and
+embedded with `/MANIFEST:EMBED`; the metrics are written at 96 dpi and scaled
+through one `S()`, with `SetProcessDpiAwarenessContext` called on the **first
+line of `wWinMain`** — the first dpi-sensitive call in a process fixes its
+awareness for good, and doing it later silently leaves the window
+bitmap-stretched.
+
+A console is not opened. When output has somewhere to go it uses it: an inherited
+`stdout` handle first, for a caller that redirected to a pipe or a file, and the
+parent's console only when nothing was inherited. Reopening `CONOUT$` in the
+first case would write past the redirection to a console nobody is reading.
+
 ## What is hooked
 
 ### Engine, through the executable's import table

@@ -69,14 +69,32 @@ typedef unsigned __int64 (*t_ResourceGet)(void*, void*, void*, void*);
 // game reaches six of them; see the notes on `map` and `component` in
 // deposits.ini for which are actually free.
 
-#define MAX_DEPOSITS 8
+#define MAX_DEPOSITS 32
 #define DEPOSIT_EXTRAS 8    // plugin-owned keys kept per section
 
-#define DEP_MAP_1  0    // resourcemap,  gameobj+0xF00
-#define DEP_MAP_2  1    // resourcemap2, gameobj+0xF08
-#define DEP_MAP_TERRAIN 2  // the terrain's own mask, terrain+0x158 - gravel's, and
-                           // reachable only from the depletion table: the spliced
-                           // dispatch chain has no case that loads it.
+// Maps, by index: 0 and 1 are the engine's own, everything above is one this
+// plugin creates, loads and saves itself. `resourcemap<index+1>.dds`.
+//
+// Eight channels was never a property of the deposit system - it is two
+// textures times four components, and the only thing that made two textures a
+// limit is that the world loader creates exactly two. Nothing downstream cares:
+// the sampler at 0x8360 takes a texture pointer, the texel writer at 0x238B00
+// takes one out of the game object, and both are reachable. So a ninth deposit
+// gets a ninth channel out of a third map rather than an apology.
+#define DEP_MAP_1     0     // resourcemap,  gameobj+0xF00
+#define DEP_MAP_2     1     // resourcemap2, gameobj+0xF08
+#define DEP_MAP_EXTRA 2     // resourcemap3 and up - ours
+
+#define MAX_MAPS       10                    // resourcemap .. resourcemap10
+#define MAX_EXTRA_MAPS (MAX_MAPS - DEP_MAP_EXTRA)
+#define DEP_MAP_AUTO   (-2)                  // `map = auto`, resolved at validate time
+
+// The terrain's own material mask at terrain+0x158 - the splat map the ground
+// textures blend through, and the one place gravel lives. Numbered outside the
+// resource maps because it is not one: it is painted by C3D_TERRAIN::EditMask
+// rather than by the deposit brush, it has to be bracketed before it can be
+// sampled, and a deposit on it visibly wears the ground away as it is mined.
+#define DEP_MAP_TERRAIN 64
 
 struct DepositDef
 {
@@ -213,8 +231,19 @@ static void LoadDepositRegistry()
         else if (KeyIs(line, "minimap"))       d->wantMinimap  = (int)strtol(val, NULL, 0);
         else if (KeyIs(line, "map"))
         {
-            if      (KeyIs(val, "resourcemap")  || KeyIs(val, "1")) d->map = DEP_MAP_1;
-            else if (KeyIs(val, "resourcemap2") || KeyIs(val, "2")) d->map = DEP_MAP_2;
+            // "resourcemap", "resourcemap2", ... "resourcemapN", the bare
+            // number, or "auto" to let the plugin pick a free channel. The
+            // stored value is always the digit minus one, so `resourcemap` and
+            // `1` are the same thing and the two engine maps keep the numbers
+            // every existing deposits.ini already uses.
+            const char* digits = val;
+            if (_strnicmp(val, "resourcemap", 11) == 0) digits = val + 11;
+
+            if (KeyIs(val, "terrain") || KeyIs(val, "mask")) d->map = DEP_MAP_TERRAIN;
+            else if (KeyIs(val, "auto"))     d->map = DEP_MAP_AUTO;
+            else if (!digits[0])             d->map = DEP_MAP_1;    // plain "resourcemap"
+            else if (digits[0] >= '1' && digits[0] <= '9')
+                                             d->map = (int)strtol(digits, NULL, 10) - 1;
             else Logf("deposits  \"%s\": unknown map \"%s\"", d->name, val);
         }
         else if (KeyIs(line, "radius"))
@@ -244,6 +273,32 @@ static void LoadDepositRegistry()
     }
 }
 
+// How many maps past the engine's two are actually needed. 0 means nothing here
+// creates a texture and the plugin behaves exactly as it did before.
+static int g_extraCount;
+
+// How many deposits live in the terrain's material mask. 0 means the two extra
+// patch sites that bracket that texture are never touched.
+static int g_terrainCount;
+
+// "resourcemap", "resourcemap2", "resourcemap3"... for the log and for paths.
+static const char* MapName(int map, char* buf, size_t n)
+{
+    if (map == DEP_MAP_TERRAIN) { strncpy_s(buf, n, "terrain mask", _TRUNCATE); return buf; }
+    if (map == DEP_MAP_1)       { strncpy_s(buf, n, "resourcemap",  _TRUNCATE); return buf; }
+    _snprintf_s(buf, n, _TRUNCATE, "resourcemap%d", map + 1);
+    return buf;
+}
+
+// Whether any kept deposit already owns this channel. Used both by the
+// duplicate check and by auto-allocation, so the two can never disagree.
+static bool ChannelTaken(int upto, int map, int component)
+{
+    for (int j = 0; j < upto; j++)
+        if (g_dep[j].map == map && g_dep[j].component == component) return true;
+    return false;
+}
+
 // Drops anything that would produce a broken patch rather than letting it
 // through - a bad type number here becomes spliced code, so the cost of
 // guessing is a corrupted process rather than a wrong colour.
@@ -254,6 +309,7 @@ static void ValidateDeposits()
     {
         DepositDef* d = &g_dep[i];
         const char* bad = NULL;
+        bool  autoChannel = (d->map == DEP_MAP_AUTO);
 
         if (!d->token[0])
             bad = "no token";
@@ -261,24 +317,64 @@ static void ValidateDeposits()
         // policy: every compare this patches is CMP r/m32,imm8, sign-extended.
         else if (d->type < 10 || d->type > 127)
             bad = "type must be 10..127 (0..9 are the game's own, and the compare takes an imm8)";
-        else if (d->component < 0 || d->component > 3)
+        else if (!autoChannel && d->map != DEP_MAP_TERRAIN && (d->map < 0 || d->map >= MAX_MAPS))
+            bad = "map must be resourcemap..resourcemap10, terrain, or auto";
+        else if (!autoChannel && (d->component < 0 || d->component > 3))
             bad = "component must be 0..3";
         else if (!d->radiusRva && d->radiusValue <= 0.0f)
             bad = "no usable radius";
 
         for (int j = 0; !bad && j < kept; j++)
         {
-            if      (g_dep[j].type == d->type)                bad = "duplicate type";
-            else if (strcmp(g_dep[j].token, d->token) == 0)    bad = "duplicate token";
-            else if (g_dep[j].map == d->map &&
-                     g_dep[j].component == d->component)       bad = "duplicate channel";
+            if      (g_dep[j].type == d->type)             bad = "duplicate type";
+            else if (strcmp(g_dep[j].token, d->token) == 0) bad = "duplicate token";
         }
+        if (!bad && !autoChannel && ChannelTaken(kept, d->map, d->component))
+            bad = "duplicate channel";
 
         if (bad)
         {
             Logf("deposits  \"%s\" rejected: %s", d->name, bad);
             continue;
         }
+
+        if (i != kept) g_dep[kept] = *d;
+        kept++;
+    }
+    g_depCount = kept;
+
+    // Auto channels, once every explicit one is known - which is the whole
+    // reason this is a second pass. Allocation starts at the first map this
+    // plugin owns rather than at the two free channels in the engine's own
+    // pair: `resourcemap` component 3 reads as 255 everywhere on half the
+    // shipped maps, and handing a deposit a channel that says "maximum richness
+    // on every texel" by default is not a sensible thing to do silently. Those
+    // two remain available by naming them.
+    for (int i = 0; i < g_depCount; i++)
+    {
+        DepositDef* d = &g_dep[i];
+        if (d->map != DEP_MAP_AUTO) continue;
+
+        d->map = -1;
+        for (int m = DEP_MAP_EXTRA; m < MAX_MAPS && d->map < 0; m++)
+            for (int c = 0; c < 4; c++)
+                if (!ChannelTaken(g_depCount, m, c))
+                {
+                    d->map = m; d->component = c;
+                    break;
+                }
+
+        if (d->map < 0)
+        {
+            Logf("deposits  \"%s\" rejected: no free channel left in %d maps", d->name, MAX_MAPS);
+            for (int k = i; k + 1 < g_depCount; k++) g_dep[k] = g_dep[k + 1];
+            g_depCount--; i--;
+        }
+    }
+
+    for (int i = 0; i < g_depCount; i++)
+    {
+        DepositDef* d = &g_dep[i];
 
         // Sharing a channel with a base-game deposit is legitimate - a second
         // mine type reading iron's ore, say - but it is far more often a typo,
@@ -287,6 +383,12 @@ static void ValidateDeposits()
             { DEP_MAP_1, 0, "oil"     }, { DEP_MAP_1, 1, "iron"    },
             { DEP_MAP_1, 2, "coal"    }, { DEP_MAP_2, 0, "uranium" },
             { DEP_MAP_2, 1, "bauxite" },
+            // Component 2 of the mask is gravel's, and it is also the channel
+            // the editor's own rock brush paints - so a deposit put there is
+            // mined out of the rock the player painted, which may well be what
+            // was wanted. Component 3 is the oasis brush's.
+            { DEP_MAP_TERRAIN, 2, "gravel (and the rock brush)" },
+            { DEP_MAP_TERRAIN, 3, "the oasis brush" },
         };
         for (size_t k = 0; k < sizeof(kTaken) / sizeof(kTaken[0]); k++)
             if (kTaken[k].map == d->map && kTaken[k].comp == d->component)
@@ -297,29 +399,51 @@ static void ValidateDeposits()
         // its argument as tex = (ch - 4) < 4 ? resourcemap2 : resourcemap and
         // component = (ch + 3) & 3, so this is that mapping inverted. It agrees
         // with all six channels the base game reaches.
-        d->editorChannel = (d->map == DEP_MAP_2 ? 4 : 0) | ((d->component + 1) & 3);
+        //
+        // An extra map has no index of its own, because the writer picks its
+        // texture out of the game object and knows only those two slots. It gets
+        // resourcemap2's, and the brush hook swaps the pointer in that slot for
+        // the length of the call - see h_ED_PaintTexels.
+        //
+        // A terrain-mask deposit is not painted by that writer at all. It goes
+        // through C3D_TERRAIN::EditMask, whose channel argument turns out to use
+        // the identical `(component + 1) & 3` encoding - rock is channel 3 and
+        // component 2, oasis is channel 0 and component 3 - so the same field
+        // carries both, without the map bit.
+        d->editorChannel = d->map == DEP_MAP_TERRAIN
+                         ? ((d->component + 1) & 3)
+                         : ((d->map != DEP_MAP_1 ? 4 : 0) | ((d->component + 1) & 3));
 
         for (int c = 0; c < 4; c++) d->vector[c] = (c == d->component) ? 1.0f : 0.0f;
 
-        if (i != kept) g_dep[kept] = *d;
-        kept++;
+        if (d->map == DEP_MAP_TERRAIN) g_terrainCount++;
+        else if (d->map >= DEP_MAP_EXTRA && d->map - DEP_MAP_EXTRA + 1 > g_extraCount)
+            g_extraCount = d->map - DEP_MAP_EXTRA + 1;
     }
-    g_depCount = kept;
 
-    int mmSlot = 5, edCol = 5;      // both grids carry five vanilla entries
+    // The minimap row and the Resources tab both carry five vanilla entries; the
+    // Rocks tab is a grid of its own, and a mask deposit's pair is counted
+    // separately because it is drawn by a different panel.
+    int mmSlot = 5, edCol = 5, rockCol = 0;
     for (int i = 0; i < g_depCount; i++)
     {
         DepositDef* d = &g_dep[i];
+        char mapName[32];
         d->minimapSlot  = d->wantMinimap ? mmSlot++ : -1;
-        d->editorColumn = d->editor[0]   ? edCol++  : -1;
+        d->editorColumn = !d->editor[0] ? -1
+                        : d->map == DEP_MAP_TERRAIN ? rockCol++ : edCol++;
 
         Logf("deposits  \"%s\" type %d \"%s\" -> %s component %d, radius %s, "
              "editor channel %d (slot %d, column %d)",
              d->name, d->type, d->token,
-             d->map == DEP_MAP_2 ? "resourcemap2" : "resourcemap", d->component,
+             MapName(d->map, mapName, sizeof(mapName)), d->component,
              d->radiusRva ? "from the game" : "fixed",
              d->editorChannel, d->minimapSlot, d->editorColumn);
     }
+
+    if (g_extraCount)
+        Logf("deposits  %d map(s) past the engine's two: resourcemap3..resourcemap%d",
+             g_extraCount, DEP_MAP_EXTRA + g_extraCount);
 }
 
 // ---------------------------------------------------------------- deposit type patch
@@ -384,16 +508,386 @@ static void ValidateDeposits()
 #define P_RADIUS_SITE      0x1DCACD
 #define P_RADIUS_WATERSURF 0x90AC38   // the constant the type 9 branch returns
 
+// The terrain's own material mask, and the two sites that bracket it.
+//
+// Gravel's dispatch is not in the chain at 0x1DD773 at all. It is three places
+// in the same function: an open before the scan, the sample inside the loop, and
+// a close after it. Only the sample can be expressed as a case in the chain -
+// its block writes the same [rsp+0x5C] and its position is the same value -
+// which leaves the bracket, and **the bracket is not optional**: the sampler
+// reads a CPU-side copy of the texture, and the mask is one the editor writes.
+//
+//   1DD499  83 BE 68 03 00 00 03   CMP [RSI+0x368],3
+//   1DD4A0  75 14                  JNZ 1DD4B6
+//   1DD4A2  48 8B 0D ..            MOV RCX,[gameobj]
+//   1DD4A9  48 8B 89 D8 0E 00 00   MOV RCX,[RCX+0xED8]
+//   1DD4B0  FF 15 ..               CALL [MaskTextureOpen]
+//
+// and 1DDE08 is the same five instructions with MaskTextureClose. Opening it
+// per sample point instead would be a GPU Map/Unmap per point - the mistake
+// docs/07-pitfalls.md already records - so both are patched, or neither.
+#define P_MASK_OPEN_SITE   0x1DD499
+#define P_MASK_OPEN_NEXT   0x1DD4B6   // where its JNZ lands
+#define P_MASK_CLOSE_SITE  0x1DDE08
+#define P_MASK_CLOSE_NEXT  0x1DDE25
+#define P_MASK_OPEN_IAT    0x86CF38   // C3D_TERRAIN::MaskTextureOpen
+#define P_MASK_CLOSE_IAT   0x86CF30   // C3D_TERRAIN::MaskTextureClose
+#define P_TERRAIN_OFF      0xED8      // gameobj -> C3D_TERRAIN
+#define P_TERRAIN_MASK     0x158      // C3D_TERRAIN -> its material mask texture
+
 static const BYTE kParserOrig[]   = { 0x48, 0x8D, 0x15, 0xF1, 0xAA, 0x77, 0x00 };
 static const BYTE kDispatchOrig[] = { 0x83, 0xBE, 0x68, 0x03, 0x00, 0x00, 0x06 };
 static const BYTE kRadiusOrig[]   = { 0x83, 0xF9, 0x09, 0x75, 0x09 };
+static const BYTE kMaskOrig[]     = { 0x83, 0xBE, 0x68, 0x03, 0x00, 0x00, 0x03 };  // both bracket sites
+
+// ---------------------------------------------------------------- maps past the engine's two
+//
+// The eight channels were never a property of the deposit system. They are two
+// textures times four components, and the only thing that made two textures a
+// limit is that the world loader creates exactly two of them. Everything
+// downstream is already generic over which texture it is handed:
+//
+//   the sampler at 0x8360   takes a texture pointer as its fourth argument
+//   the texel writer 0x238B00 reads one out of the game object, at a fixed offset
+//   the overlay shader      binds whatever texture was put in stage 0
+//
+// So a third map needs no new engine machinery at all - it needs the three
+// things the world loader does for the first two, done again:
+//
+//   140007B1A  CreateManagedTexture(middlepoint, "<folder>/resourcemap.dds")
+//   140007B4E  tex->vtbl[2] (tex, path, 0, 0, 0, 0)      Load2DFromFile
+//   140007B5C  tex->vtbl[19](tex)                        TextureAccessInitTempResource
+//
+// and the one thing the world saver does, at 0x7C20:
+//
+//   140007C6x  tex->vtbl[36](tex, "<folder>/resourcemap.dds")   SaveToDDS
+//
+// Both are reached without patching code. The load side is an **import swap** on
+// CreateManagedTexture: the world loader hands it "<folder>/resourcemap.dds",
+// which is the one path that always carries the folder - `resourcemap2` falls
+// back to the bare "resourcemap2default.dds" when a map ships without one - so
+// seeing that path is both the signal that a world is loading and the name of
+// the folder it is loading from. The save side is an additive inline hook on
+// 0x7C20, which takes the same folder in RDX.
+//
+// A map with no resourcemapN.dds of its own loads a **blank**, written once into
+// the loader's own VFS. It cannot be the engine's `resourcemap2default.dds`:
+// that file is not blank - components 0, 1 and 2 carry a stock uranium and
+// bauxite layout, measured, and only its alpha is clear - and CreateManagedTexture
+// caches by path, so two extra maps loading one file would be one texture.
+
+#define P_WORLD_SAVE_RVA   0x7C20     // FUN_140007c20(self, folder) - SaveToDDS x4
+
+#define TEX_LOAD2D         2          // vtbl+0x10   Load2DFromFile(path,0,0,0,0)
+#define TEX_INIT_TEMP      19         // vtbl+0x98   TextureAccessInitTempResource
+#define TEX_SAVE_DDS       36         // vtbl+0x120  SaveToDDS(path)
+
+#define MAP_EDGE           1024       // both engine maps, and therefore ours
+#define MAP_BLANK_REL      "tesmio/resourcemap_blank.dds"
+
+// The blank's header, byte for byte the one media_soviet/resourcemap2default.dds
+// carries: 1024x1024, uncompressed 32-bit, R at byte 0, no mip chain. Embedded
+// rather than copied from that file at runtime so nothing here depends on a game
+// asset being where it is expected to be.
+static const BYTE kBlankDdsHeader[128] = {
+    0x44,0x44,0x53,0x20, 0x7C,0x00,0x00,0x00, 0x0F,0x10,0x02,0x00, 0x00,0x04,0x00,0x00,
+    0x00,0x04,0x00,0x00, 0x00,0x10,0x00,0x00, 0x00,0x00,0x00,0x00, 0x01,0x00,0x00,0x00,
+    0x00,0x00,0x00,0x00, 0x00,0x00,0x00,0x00, 0x00,0x00,0x00,0x00, 0x00,0x00,0x00,0x00,
+    0x00,0x00,0x00,0x00, 0x00,0x00,0x00,0x00, 0x00,0x00,0x00,0x00, 0x00,0x00,0x00,0x00,
+    0x00,0x00,0x00,0x00, 0x00,0x00,0x00,0x00, 0x00,0x00,0x00,0x00, 0x20,0x00,0x00,0x00,
+    0x41,0x00,0x00,0x00, 0x00,0x00,0x00,0x00, 0x20,0x00,0x00,0x00, 0xFF,0x00,0x00,0x00,
+    0x00,0xFF,0x00,0x00, 0x00,0x00,0xFF,0x00, 0x00,0x00,0x00,0xFF, 0x00,0x10,0x00,0x00,
+    0x00,0x00,0x00,0x00, 0x00,0x00,0x00,0x00, 0x00,0x00,0x00,0x00, 0x00,0x00,0x00,0x00,
+};
+
+struct ExtraMap
+{
+    void*  tex;        // the live C3DAPI_TEXTURE, rebuilt with every world
+    void** caveSlot;   // where the spliced dispatch reads it from; NULL if unpatched
+};
+static ExtraMap g_extra[MAX_EXTRA_MAPS];
+
+static char g_extraFolder[MAX_PATH];   // the world folder the maps were loaded from
+static bool g_inExtraLoad;             // guards the CreateManagedTexture re-entry
+
+typedef void* (__fastcall* t_CreateManagedTexture)(void*, const char*);
+typedef bool  (__cdecl*    t_FileExists)(const char*, bool, bool);
+typedef void  (*t_WorldSaveMaps)(void*, const char*);
+
+static t_CreateManagedTexture o_CreateManagedTexture;
+static t_FileExists           o_FileExists;
+static t_WorldSaveMaps        o_WorldSaveMaps;
+
+static const BYTE kWorldSavePrologue[] = {
+    0x48, 0x89, 0x5C, 0x24, 0x08,               // mov [rsp+8],rbx
+    0x57,                                       // push rdi
+    0x48, 0x81, 0xEC, 0x30, 0x03, 0x00, 0x00    // sub rsp,0x330
+};
+
+static void* TexVCall(void* tex, int slot)
+{
+    if (!ReadablePtr(tex, sizeof(void*))) return NULL;
+    void** vtbl = *(void***)tex;
+    if (!ReadablePtr(vtbl, (size_t)(slot + 1) * sizeof(void*))) return NULL;
+    return vtbl[slot];
+}
+
+// The texture a deposit's channel lives in, whichever kind of map that is. The
+// engine's two are read out of the game object every time rather than cached,
+// because they are replaced at every world load; ours are replaced at the same
+// moment and by the same event, so they are treated the same way.
+static void* DepositMapTexture(const DepositDef* d)
+{
+    if (d->map == DEP_MAP_TERRAIN)
+    {
+        BYTE* gameobj = *(BYTE**)(g_exeBase + P_GAMEOBJ);
+        if (!ReadablePtr(gameobj, P_TERRAIN_OFF + sizeof(void*))) return NULL;
+        BYTE* terrain = *(BYTE**)(gameobj + P_TERRAIN_OFF);
+        if (!ReadablePtr(terrain, P_TERRAIN_MASK + sizeof(void*))) return NULL;
+        return *(void**)(terrain + P_TERRAIN_MASK);
+    }
+
+    if (d->map >= DEP_MAP_EXTRA)
+    {
+        int k = d->map - DEP_MAP_EXTRA;
+        if (k >= MAX_EXTRA_MAPS) return NULL;
+        return ReadablePtr(g_extra[k].tex, sizeof(void*)) ? g_extra[k].tex : NULL;
+    }
+
+    BYTE* gameobj = *(BYTE**)(g_exeBase + P_GAMEOBJ);
+    if (!ReadablePtr(gameobj, P_MAP2_OFF + sizeof(void*))) return NULL;
+    return *(void**)(gameobj + (d->map == DEP_MAP_2 ? P_MAP2_OFF : P_MAP1_OFF));
+}
+
+// Writes the blank map into the loader's VFS if it is not already there, and
+// answers with the media_soviet-relative path the engine will ask for. 4 MB,
+// written once and shared by every extra map: CreateManagedTexture caches by the
+// name it is *given*, and Load2DFromFile takes its own path argument, so one
+// file can back any number of distinct textures.
+static const char* BlankMapPath()
+{
+    static char rel[64];
+    static int  state;                    // 0 unknown, 1 ready, -1 failed
+    if (state) return state > 0 ? rel : NULL;
+
+    strncpy_s(rel, sizeof(rel), MAP_BLANK_REL, _TRUNCATE);
+
+    char dir[MAX_PATH], file[MAX_PATH];
+    _snprintf_s(dir,  sizeof(dir),  _TRUNCATE, "%s\\vfs\\media_soviet", g_baseDir);
+    CreateDirectoryA(dir, NULL);
+    _snprintf_s(dir,  sizeof(dir),  _TRUNCATE, "%s\\vfs\\media_soviet\\tesmio", g_baseDir);
+    CreateDirectoryA(dir, NULL);
+    _snprintf_s(file, sizeof(file), _TRUNCATE, "%s\\resourcemap_blank.dds", dir);
+
+    WIN32_FILE_ATTRIBUTE_DATA fad;
+    const LONGLONG want = 128 + (LONGLONG)MAP_EDGE * MAP_EDGE * 4;
+    if (GetFileAttributesExA(file, GetFileExInfoStandard, &fad) &&
+        ((LONGLONG)fad.nFileSizeHigh << 32 | fad.nFileSizeLow) == want)
+    {
+        state = 1;
+        return rel;
+    }
+
+    HANDLE h = CreateFileA(file, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS,
+                           FILE_ATTRIBUTE_NORMAL, NULL);
+    if (h == INVALID_HANDLE_VALUE)
+    {
+        Logf("maps     could not write %s (%lu) - extra maps have no blank to fall back on",
+             file, GetLastError());
+        state = -1;
+        return NULL;
+    }
+
+    DWORD wrote = 0;
+    bool  ok = WriteFile(h, kBlankDdsHeader, sizeof(kBlankDdsHeader), &wrote, NULL) != 0;
+
+    static BYTE zero[65536];              // .bss, so it costs nothing and is already zero
+    for (LONGLONG left = (LONGLONG)MAP_EDGE * MAP_EDGE * 4; ok && left > 0; left -= sizeof(zero))
+    {
+        DWORD chunk = (DWORD)(left < (LONGLONG)sizeof(zero) ? left : (LONGLONG)sizeof(zero));
+        ok = WriteFile(h, zero, chunk, &wrote, NULL) != 0 && wrote == chunk;
+    }
+    CloseHandle(h);
+
+    if (!ok) { Logf("maps     failed writing %s", file); state = -1; return NULL; }
+    Logf("maps     wrote the blank deposit map to %s", file);
+    state = 1;
+    return rel;
+}
+
+// Everything the world loader does for resourcemap and resourcemap2, once per
+// extra map. Runs inside the CreateManagedTexture hook, on whatever thread the
+// world loader is using - which is the same thread, and the same moment, the
+// engine does its own two on.
+// `mp` is the middlepoint the world loader is using, taken straight off the call
+// this hook intercepted rather than from the static at P_MIDDLEPOINT. The two
+// are almost certainly the same object - the loader passes `*(void**)gameobj` -
+// but "almost certainly" would decide which cache the textures live in and
+// therefore when they are released, and the right answer was already in the
+// argument list.
+static void LoadExtraMaps(void* mp, const char* folder)
+{
+    if (!o_CreateManagedTexture) return;
+
+    strncpy_s(g_extraFolder, sizeof(g_extraFolder), folder, _TRUNCATE);
+
+    for (int k = 0; k < g_extraCount; k++)
+    {
+        char own[MAX_PATH];
+        _snprintf_s(own, sizeof(own), _TRUNCATE, "%s/resourcemap%d.dds",
+                    folder, DEP_MAP_EXTRA + k + 1);
+
+        // The map's own file when the world has one - a saved game always will,
+        // because the save hook below writes it - and the blank otherwise, which
+        // is what a terrain that has never seen this deposit type looks like.
+        const char* src = own;
+        if (o_FileExists && !o_FileExists(own, false, true))
+        {
+            src = BlankMapPath();
+            if (!src) { g_extra[k].tex = NULL; continue; }
+        }
+
+        // Created under its own name whatever it is loaded from, so each map is
+        // a distinct texture and each saves back to its own file.
+        void* tex = o_CreateManagedTexture(mp, own);
+        if (!ReadablePtr(tex, sizeof(void*)))
+        {
+            Logf("maps     resourcemap%d: CreateManagedTexture failed", DEP_MAP_EXTRA + k + 1);
+            g_extra[k].tex = NULL;
+            continue;
+        }
+
+        typedef void (*t_Load)(void*, const char*, int, int, int, int);
+        typedef void (*t_Init)(void*);
+        if (void* fn = TexVCall(tex, TEX_LOAD2D))    ((t_Load)fn)(tex, src, 0, 0, 0, 0);
+        if (void* fn = TexVCall(tex, TEX_INIT_TEMP)) ((t_Init)fn)(tex);
+
+        g_extra[k].tex = tex;
+        if (g_extra[k].caveSlot) *g_extra[k].caveSlot = tex;
+
+        Logf("maps     resourcemap%d = %p (%s)", DEP_MAP_EXTRA + k + 1, tex,
+             src == own ? own : "blank");
+    }
+}
+
+// The one path that always carries the world folder. resourcemap2 is built the
+// same way but falls back to a bare "resourcemap2default.dds" on a map that
+// ships without one, and the farmap and emissive map are created elsewhere.
+static const char* WorldFolderOf(const char* path, char* out, size_t n)
+{
+    if (!path) return NULL;
+    size_t len = strlen(path);
+    static const char kTail[] = "/resourcemap.dds";
+    const size_t tail = sizeof(kTail) - 1;
+    if (len <= tail) return NULL;
+
+    const char* at = path + len - tail;
+    if (_stricmp(at, kTail) != 0 && _stricmp(at, "\\resourcemap.dds") != 0) return NULL;
+
+    size_t keep = (size_t)(at - path);
+    if (keep >= n) return NULL;
+    memcpy(out, path, keep);
+    out[keep] = 0;
+    return out;
+}
+
+static void* __fastcall h_CreateManagedTexture(void* self, const char* path)
+{
+    void* r = o_CreateManagedTexture(self, path);
+
+    // Re-entrant by construction - LoadExtraMaps calls straight back into this
+    // function - so the guard is the whole of the recursion control.
+    if (g_extraCount > 0 && !g_inExtraLoad)
+    {
+        char folder[MAX_PATH];
+        if (WorldFolderOf(path, folder, sizeof(folder)))
+        {
+            g_inExtraLoad = true;
+            for (int k = 0; k < MAX_EXTRA_MAPS; k++)
+            {
+                g_extra[k].tex = NULL;
+                if (g_extra[k].caveSlot) *g_extra[k].caveSlot = NULL;
+            }
+            __try { LoadExtraMaps(self, folder); }
+            __except (FaultFilter("extra deposit maps", GetExceptionInformation()))
+            {
+                Logf("maps     load faulted - extra deposit maps unavailable this world");
+            }
+            g_inExtraLoad = false;
+        }
+    }
+    return r;
+}
+
+// The world saver writes farmap, the emissive map and both deposit maps, each
+// through SaveToDDS with the folder it was handed. Ours go with them, so a
+// painted or depleted extra map survives a reload exactly the way the engine's
+// two already do.
+static void h_WorldSaveMaps(void* self, const char* folder)
+{
+    o_WorldSaveMaps(self, folder);
+
+    __try
+    {
+        typedef void (*t_Save)(void*, const char*);
+        for (int k = 0; k < g_extraCount; k++)
+        {
+            if (!g_extra[k].tex) continue;
+            void* fn = TexVCall(g_extra[k].tex, TEX_SAVE_DDS);
+            if (!fn) continue;
+
+            char path[MAX_PATH];
+            _snprintf_s(path, sizeof(path), _TRUNCATE, "%s/resourcemap%d.dds",
+                        folder, DEP_MAP_EXTRA + k + 1);
+            ((t_Save)fn)(g_extra[k].tex, path);
+        }
+    }
+    __except (FaultFilter("extra deposit map save", GetExceptionInformation()))
+    {
+        Logf("maps     save faulted - extra deposit maps were not written");
+    }
+}
+
+static void InstallExtraMaps()
+{
+    if (g_extraCount <= 0) return;
+
+    void** slot = FindIatSlot(g_exe, DLL_ENGINE, "?C3DHelp_CheckIfFileExist@@YA_NPEBD_N1@Z");
+    if (slot) o_FileExists = (t_FileExists)*slot;
+    else Logf("maps     WARN  no import slot for C3DHelp_CheckIfFileExist - every extra map "
+              "will load its own file and fail silently if it is not there");
+
+    if (!PatchIat(g_exe, DLL_ENGINE,
+                  "?CreateManagedTexture@C3D_MIDDLEPOINT@@QEAAPEAVC3DAPI_TEXTURE@@PEBD@Z",
+                  (void*)h_CreateManagedTexture, (void**)&o_CreateManagedTexture,
+                  "CreateManagedTexture"))
+    {
+        Logf("maps     FAILED  cannot hook CreateManagedTexture - %d extra map(s) disabled",
+             g_extraCount);
+        g_extraCount = 0;
+        return;
+    }
+
+    if (!InstallInlineHook(g_exeBase + P_WORLD_SAVE_RVA, (void*)h_WorldSaveMaps,
+                           (void**)&o_WorldSaveMaps, kWorldSavePrologue,
+                           sizeof(kWorldSavePrologue), "world map save"))
+        Logf("maps     WARN  the save hook did not install - extra maps load but are never "
+             "written back, so painting and depletion will not survive a reload");
+
+    BlankMapPath();      // written now rather than mid-load
+    Logf("maps     %d map(s) past the engine's two are loaded and saved with the world",
+         g_extraCount);
+}
 
 // Data below, code above. Both are bump-allocated and both are bounds-checked:
 // with the number of cases coming out of a config file, running off the end is
 // a thing a user can cause, and it must fail before a byte of the executable
 // has been touched rather than halfway through.
-#define CAVE_SIZE          0x2000
-#define CAVE_CODE          0x800
+// Sized for MAX_DEPOSITS: a case costs about 60 bytes in each of the parser and
+// dispatch chains and 16 in the radius one, so 32 of them is roughly 4.5 KB of
+// code, against tokens, radius floats and map pointers in the data half.
+#define CAVE_SIZE          0x4000
+#define CAVE_CODE          0x1000
 
 static int   g_depositPatch;
 static BYTE* g_cave;
@@ -438,9 +932,17 @@ static void EmitParserCase(Emit& e, const DepositDef* d, BYTE* token)
 }
 
 // One case of the type -> (texture, colour component) chain. The body is the
-// game's own type-6 block with two substitutions: which map pointer is loaded
-// out of the game object, and which float of the sampled colour is kept.
-static void EmitDispatchCase(Emit& e, const DepositDef* d)
+// game's own type-6 block with two substitutions: which map pointer is loaded,
+// and which float of the sampled colour is kept.
+//
+// The engine's two maps are read out of the game object exactly as its own cases
+// do. A map this plugin owns has no home in the game object, so its case reads
+// the pointer from a qword in the cave's own data instead - `mapSlot` - which
+// LoadExtraMaps writes at every world load. Same one instruction's worth of
+// work, one indirection shorter, and the sampler cannot tell the difference:
+// its fourth argument is a texture pointer and nothing about it says where the
+// pointer came from.
+static void EmitDispatchCase(Emit& e, const DepositDef* d, BYTE* mapSlot)
 {
     e.b(0x83); e.b(0xBE); e.d32(P_DEP_TYPE_FIELD); e.b((BYTE)d->type);      // cmp [rsi+0x368],type
     BYTE* next = e.jne32();
@@ -449,9 +951,22 @@ static void EmitDispatchCase(Emit& e, const DepositDef* d)
     e.b(0xF2); e.b(0x0F); e.b(0x11); e.b(0x45); e.b(0x38);                  // movsd [rbp+0x38],xmm0
     e.b(0x8B); e.b(0x44); e.b(0x24); e.b(0x48);                             // mov eax,[rsp+0x48]
     e.b(0x89); e.b(0x45); e.b(0x40);                                        // mov [rbp+0x40],eax
-    e.b(0x4C); e.b(0x8B); e.b(0x0D); e.rel32(g_exeBase + P_GAMEOBJ);        // mov r9,[gameobj]
-    e.b(0x4D); e.b(0x8B); e.b(0x89);
-    e.d32(d->map == DEP_MAP_2 ? P_MAP2_OFF : P_MAP1_OFF);                   // mov r9,[r9+map]
+    if (mapSlot)
+    {
+        e.b(0x4C); e.b(0x8B); e.b(0x0D); e.rel32(mapSlot);                  // mov r9,[our slot]
+    }
+    else if (d->map == DEP_MAP_TERRAIN)
+    {
+        e.b(0x4C); e.b(0x8B); e.b(0x0D); e.rel32(g_exeBase + P_GAMEOBJ);    // mov r9,[gameobj]
+        e.b(0x4D); e.b(0x8B); e.b(0x89); e.d32(P_TERRAIN_OFF);              // mov r9,[r9+0xed8]
+        e.b(0x4D); e.b(0x8B); e.b(0x89); e.d32(P_TERRAIN_MASK);             // mov r9,[r9+0x158]
+    }
+    else
+    {
+        e.b(0x4C); e.b(0x8B); e.b(0x0D); e.rel32(g_exeBase + P_GAMEOBJ);    // mov r9,[gameobj]
+        e.b(0x4D); e.b(0x8B); e.b(0x89);
+        e.d32(d->map == DEP_MAP_2 ? P_MAP2_OFF : P_MAP1_OFF);               // mov r9,[r9+map]
+    }
     e.b(0x4C); e.b(0x8D); e.b(0x45); e.b(0x38);                             // lea r8,[rbp+0x38]
     e.b(0x48); e.b(0x8D); e.b(0x95); e.d32(0xB0);                           // lea rdx,[rbp+0xb0]
     e.b(0xE8); e.rel32(g_exeBase + P_SAMPLER);                              // call sampler
@@ -461,6 +976,34 @@ static void EmitDispatchCase(Emit& e, const DepositDef* d)
     e.b(0xE9); e.rel32(g_exeBase + P_DISPATCH_TAIL);
 
     e.land(next);
+}
+
+// One half of the terrain-mask bracket: `if (type is one of ours, or 3)
+// Mask{Open,Close}(terrain)`, in the shape the site it replaces already had.
+// Emitted only when a deposit actually declares the mask, so a configuration
+// without one leaves both sites untouched.
+static void EmitMaskBracket(Emit& e, DWORD iatRva, BYTE* rejoin)
+{
+    BYTE* land[MAX_DEPOSITS];
+    int   n = 0;
+
+    for (int i = 0; i < g_depCount && n < MAX_DEPOSITS; i++)
+    {
+        if (g_dep[i].map != DEP_MAP_TERRAIN) continue;
+        e.b(0x83); e.b(0xBE); e.d32(P_DEP_TYPE_FIELD); e.b((BYTE)g_dep[i].type);
+        e.b(0x0F); e.b(0x84); land[n++] = e.p; e.d32(0);                    // jz open
+    }
+
+    e.b(0x83); e.b(0xBE); e.d32(P_DEP_TYPE_FIELD); e.b(0x03);               // cmp [rsi+0x368],3
+    BYTE* skip = e.jne32();
+
+    for (int i = 0; i < n; i++) e.land(land[i]);                            // open:
+    e.b(0x48); e.b(0x8B); e.b(0x0D); e.rel32(g_exeBase + P_GAMEOBJ);        // mov rcx,[gameobj]
+    e.b(0x48); e.b(0x8B); e.b(0x89); e.d32(P_TERRAIN_OFF);                  // mov rcx,[rcx+0xed8]
+    e.b(0xFF); e.b(0x15); e.rel32(g_exeBase + iatRva);                      // call [MaskTexture*]
+
+    e.land(skip);
+    e.b(0xE9); e.rel32(rejoin);
 }
 
 // One case of the search-radius table. The value is copied out of .rdata at
@@ -486,6 +1029,8 @@ static bool PatchDepositType()
     BYTE* parserSite   = g_exeBase + P_PARSER_SITE;
     BYTE* dispatchSite = g_exeBase + P_DISPATCH_SITE;
     BYTE* radiusSite   = g_exeBase + P_RADIUS_SITE;
+    BYTE* maskOpenSite = g_exeBase + P_MASK_OPEN_SITE;
+    BYTE* maskCloseSite= g_exeBase + P_MASK_CLOSE_SITE;
 
     if (memcmp(parserSite,   kParserOrig,   sizeof(kParserOrig))   != 0 ||
         memcmp(dispatchSite, kDispatchOrig, sizeof(kDispatchOrig)) != 0 ||
@@ -493,6 +1038,24 @@ static bool PatchDepositType()
     {
         Logf("patch  site bytes differ from build v1.1.1.7 - refusing to patch");
         return false;
+    }
+
+    // Checked separately and only when they will be used, so a configuration
+    // with no terrain-mask deposit is not held hostage to two sites it never
+    // touches. Both or neither: an opened mask that is never closed leaves a
+    // D3D11 resource mapped.
+    if (g_terrainCount &&
+        (memcmp(maskOpenSite,  kMaskOrig, sizeof(kMaskOrig)) != 0 ||
+         memcmp(maskCloseSite, kMaskOrig, sizeof(kMaskOrig)) != 0))
+    {
+        Logf("patch  terrain-mask bracket bytes differ from build v1.1.1.7 - "
+             "%d mask deposit(s) dropped", g_terrainCount);
+        int kept = 0;
+        for (int i = 0; i < g_depCount; i++)
+            if (g_dep[i].map != DEP_MAP_TERRAIN) g_dep[kept++] = g_dep[i];
+        g_depCount     = kept;
+        g_terrainCount = 0;
+        if (!g_depCount) { Logf("patch  nothing left to splice"); return false; }
     }
 
     g_cave = AllocNear(g_exeBase, CAVE_SIZE);
@@ -524,6 +1087,19 @@ static bool PatchDepositType()
         data += 4;
     }
 
+    // One qword per map past the engine's two, for the dispatch to read the
+    // texture out of. Kept in the cave rather than in this DLL's own data
+    // because the cave is guaranteed to be within rel32 of the code that reads
+    // it, and a plugin's globals are wherever Windows put the module.
+    data = (BYTE*)(((size_t)data + 7) & ~(size_t)7);
+    for (int k = 0; k < g_extraCount; k++)
+    {
+        if ((size_t)(dataEnd - data) < 8) { Logf("patch  cave data full at map %d", DEP_MAP_EXTRA + k + 1); return false; }
+        *(void**)data     = g_extra[k].tex;                // NULL until a world loads
+        g_extra[k].caveSlot = (void**)data;
+        data += 8;
+    }
+
     // --- code -------------------------------------------------------------
     Emit e;
     e.p = g_cave + CAVE_CODE;
@@ -546,7 +1122,15 @@ static bool PatchDepositType()
 
     // Dispatch: our types first, then the displaced type-6 check.
     BYTE* dispatchCave = e.p;
-    for (int i = 0; i < g_depCount; i++) EmitDispatchCase(e, &g_dep[i]);
+    for (int i = 0; i < g_depCount; i++)
+    {
+        // Bounded on both sides. DEP_MAP_TERRAIN is deliberately far outside the
+        // map numbers, so a bare `map - DEP_MAP_EXTRA` would index the extra-map
+        // table at 62 and hand the emitter whatever was there.
+        int k = (g_dep[i].map >= DEP_MAP_EXTRA && g_dep[i].map < MAX_MAPS)
+              ? g_dep[i].map - DEP_MAP_EXTRA : -1;
+        EmitDispatchCase(e, &g_dep[i], k >= 0 ? (BYTE*)g_extra[k].caveSlot : NULL);
+    }
 
     e.b(0x83); e.b(0xBE); e.d32(P_DEP_TYPE_FIELD); e.b(0x06);           // cmp [rsi+0x368],6
     e.b(0x0F); e.b(0x85); e.rel32(g_exeBase + P_DISPATCH_TAIL);
@@ -568,6 +1152,17 @@ static bool PatchDepositType()
     e.b(0x0F); e.b(0x57); e.b(0xC0);                                    // xorps xmm0,xmm0
     e.b(0xC3);
 
+    // The terrain-mask bracket, both halves, only when something asks for it.
+    BYTE* maskOpenCave  = NULL;
+    BYTE* maskCloseCave = NULL;
+    if (g_terrainCount)
+    {
+        maskOpenCave = e.p;
+        EmitMaskBracket(e, P_MASK_OPEN_IAT,  g_exeBase + P_MASK_OPEN_NEXT);
+        maskCloseCave = e.p;
+        EmitMaskBracket(e, P_MASK_CLOSE_IAT, g_exeBase + P_MASK_CLOSE_NEXT);
+    }
+
     // Checked before a single byte of the executable is touched, so a cave that
     // did not fit leaves the process exactly as it was.
     if (e.overflow)
@@ -580,13 +1175,17 @@ static bool PatchDepositType()
 
     // --- redirect all three sites ----------------------------------------
     struct { BYTE* site; BYTE* cave; size_t len; const char* what; } jumps[] = {
-        { parserSite,   parserCave,   sizeof(kParserOrig),   "parser"   },
-        { dispatchSite, dispatchCave, sizeof(kDispatchOrig), "dispatch" },
-        { radiusSite,   radiusCave,   sizeof(kRadiusOrig),   "radius"   },
+        { parserSite,    parserCave,    sizeof(kParserOrig),   "parser"     },
+        { dispatchSite,  dispatchCave,  sizeof(kDispatchOrig), "dispatch"   },
+        { radiusSite,    radiusCave,    sizeof(kRadiusOrig),   "radius"     },
+        { maskOpenSite,  maskOpenCave,  sizeof(kMaskOrig),     "mask open"  },
+        { maskCloseSite, maskCloseCave, sizeof(kMaskOrig),     "mask close" },
     };
 
-    for (int i = 0; i < 3; i++)
+    for (int i = 0; i < (int)(sizeof(jumps) / sizeof(jumps[0])); i++)
     {
+        if (!jumps[i].cave) continue;         // the bracket, with nothing to bracket
+
         DWORD prot = 0;
         if (!VirtualProtect(jumps[i].site, jumps[i].len, PAGE_EXECUTE_READWRITE, &prot))
         {
@@ -602,11 +1201,15 @@ static bool PatchDepositType()
     }
 
     for (int i = 0; i < g_depCount; i++)
+    {
+        char mapName[32];
         Logf("patch  deposit type %d added: \"%s\" in building.ini, %s component %d",
              g_dep[i].type, g_dep[i].token,
-             g_dep[i].map == DEP_MAP_2 ? "resourcemap2" : "resourcemap", g_dep[i].component);
-    Logf("patch  cave at %p, %zu of %d bytes used (parser %p, dispatch %p, radius %p)",
-         g_cave, g_caveUsed, CAVE_SIZE, parserCave, dispatchCave, radiusCave);
+             MapName(g_dep[i].map, mapName, sizeof(mapName)), g_dep[i].component);
+    }
+    Logf("patch  cave at %p, %zu of %d bytes used (parser %p, dispatch %p, radius %p, mask %p/%p)",
+         g_cave, g_caveUsed, CAVE_SIZE, parserCave, dispatchCave, radiusCave,
+         maskOpenCave, maskCloseCave);
     return true;
 }
 // ---------------------------------------------------------------- minimap deposit buttons
@@ -710,6 +1313,23 @@ static const BYTE kMinimapRowPrologue[] = {
 #define G_COLOR_IDLE      0x90C120   // float4 tint, not hovered
 #define G_COLOR_HOVER     0x90C4E0   // float4 tint, hovered
 #define G_COLOR_OVERLAY   0x90C2F0   // float4 (1,0,0,1) - the red every deposit layer is drawn in
+
+// The minimap's hover text, and it needed no unexported formatter after all.
+// Every vanilla layer does exactly this when its icon is hovered:
+//
+//   Resource* r = ResourceGet(&game, "coal");
+//   FUN_140005290(&buffer, 0x800, L"%ls: %ls",
+//                 GetString(&lang, 0x2F3), GetString(&lang, r[0x40]));
+//
+// - a swprintf into one global wide buffer the panel draws later. So a mod layer
+// needs the same three things it already has: the resource its `icon` names, that
+// record's caption id, and the same label.
+#define G_LANG            0x997590   // C3D_LANGUAGE
+#define G_TOOLTIP_BUF     0x9E24B0   // the wide buffer the hover text is built in
+#define G_TOOLTIP_CHARS   0x800
+#define P_FORMAT_WIDE     0x5290     // (wchar_t* buf, size_t chars, const wchar_t* fmt, ...)
+#define TXT_DEPOSIT_LABEL 0x2F3      // the "<label>: <resource>" prefix every layer uses
+#define RES_CAPTION_OFF   0x40       // resource record -> its caption's localisation id
 #define G_PANEL_POS       0x9BE2F0   // 2 floats: x,y of the next Draw()
 #define G_PANEL_PAD       0x9BE2F8
 #define G_PANEL_SIZE      0x9BE2E8   // 2 floats: w,h of the next Draw()
@@ -746,6 +1366,13 @@ static t_MM_Collision        o_MM_Collision;
 
 static t_MM_DrawRowOrOverlay o_MM_DrawOverlay;   // trampoline for 0x4BDDE0
 static t_MM_DrawRowOrOverlay o_MM_DrawRow;       // trampoline for 0x4BFEA0
+
+// Not a hook - the address is taken so a mod layer can build the same hover text
+// the vanilla ones do. C3D_LANGUAGE::GetString is already the resources plugin's
+// import hook when that plugin is installed, which is exactly what makes a mod
+// resource's caption resolve here without either plugin knowing the other.
+typedef wchar_t* (*t_MM_GetString)(void*, int);
+static t_MM_GetString o_MM_GetString;
 
 static int g_minimapPatch;
 
@@ -860,7 +1487,10 @@ static void DrawDepositOverlay(BYTE* param_1, const DepositDef* d)
     BYTE* terrain = *(BYTE**)(gameobj + 0xED8);
     if (!ReadablePtr(terrain, 0x8F0)) return;
 
-    void* map = *(void**)(gameobj + (d->map == DEP_MAP_2 ? P_MAP2_OFF : P_MAP1_OFF));
+    // Whichever kind of map the section named. An extra one is not in the game
+    // object at all, and the shader does not care: MM_TexBind puts whatever it
+    // is given into stage 0.
+    void* map = DepositMapTexture(d);
     if (!map) return;                             // no deposit map, nothing to sample
 
     bool  desert  = *(int*)(terrain + 0x8EC) == 1;
@@ -981,6 +1611,25 @@ static void DrawDepositButton(BYTE* param_1, DepositDef* d)
 
     o_MM_Draw(panel, 0.0f, 0.0f, full, full, 0.0f, true);
 
+    // The hover text, in the same buffer and the same shape as every vanilla
+    // layer's. Written while hovered and left alone otherwise, exactly as the
+    // vanilla blocks do - whoever is hovered last owns the buffer, and the panel
+    // draws it afterwards.
+    if (hovered && o_MM_GetString && d->icon[0])
+    {
+        t_ResourceGet resourceGet = (t_ResourceGet)(g_exeBase + P_RESOURCEGET);
+        BYTE* record = (BYTE*)resourceGet(g_exeBase + G_RES_SELF, (void*)d->icon, NULL, NULL);
+        if (ReadablePtr(record, RES_CAPTION_OFF + sizeof(int)))
+        {
+            typedef void (*t_FormatWide)(void*, size_t, const wchar_t*, ...);
+            void* lang = g_exeBase + G_LANG;
+            ((t_FormatWide)(g_exeBase + P_FORMAT_WIDE))(
+                g_exeBase + G_TOOLTIP_BUF, G_TOOLTIP_CHARS, L"%ls: %ls",
+                o_MM_GetString(lang, TXT_DEPOSIT_LABEL),
+                o_MM_GetString(lang, *(int*)(record + RES_CAPTION_OFF)));
+        }
+    }
+
     // the resource's own icon, straight out of its record - no art asset of
     // our own needed
     // The record comes out of a table the engine rebuilds at every map load,
@@ -1069,6 +1718,7 @@ static bool ResolveMinimapImports()
         { "?Draw@C3D_PANEL2D@@QEAAXMMMMM_N@Z",               (void**)&o_MM_Draw             },
         { "?GetMouseSolid@C3D_INPUT@@QEAA?AVC3DVECTOR3@@XZ", (void**)&o_MM_GetMouseSolid    },
         { "?Collision@C3D_PANEL2D@@QEAA_NVC3DVECTOR3@@MM@Z", (void**)&o_MM_Collision        },
+        { "?GetString@C3D_LANGUAGE@@QEAAPEA_WH@Z",           (void**)&o_MM_GetString        },
     };
     for (size_t i = 0; i < sizeof(imports) / sizeof(imports[0]); i++)
     {
@@ -1158,8 +1808,29 @@ static void InstallMinimapPatch()
 // button drawer, which is the only thing that reads them.
 #define TOOL_STRIDE       0x2D0
 #define TOOL_NAME         0x00
+#define TOOL_CAPTION      0x40       // localisation id of the hover text
+#define TOOL_BUILDING     0x48       // a building type for a build tool, 0 for a terrain one
 #define TOOL_ICON_TEX     0x58       // the texture the button binds
 #define TOOL_ICON_PATH    0xB4       // empty on every built-in tool - see below
+
+// The hover text, and why our buttons had none.
+//
+// The "accumulator" every vanilla button is handed is one qword, not a buffer:
+// when a button is hovered, 0x3826C0 writes the tool's **descriptor** into it
+// (and into editorSelf+0xC8C0) at rva 0x382A29. The panel then hands that qword
+// to 0x383BD0, which reads two fields off the descriptor it names:
+//
+//   tool+0x48 == 0   ->  wcscpy(editorSelf+0xD5A0, GetString(lang, tool+0x40))
+//   tool+0x48 != 0   ->  the rich building tooltip, drawn at the mouse
+//
+// Every terrain tool has +0x48 == 0, so a mod brush takes the simple path and
+// needs nothing but a text id at +0x40.
+//
+// So there was never anything missing from the buttons - the panel calls
+// 0x383BD0 before it returns, which is before an appended hook has drawn
+// anything, and our accumulator went nowhere. Calling the consumer ourselves,
+// once, after our own buttons, is the whole fix.
+#define P_ED_TOOLTIP      0x383BD0   // FUN_140383bd0(editorSelf, hoveredTool)
 
 // Engine globals and vtable slots the icon needs.
 #define G_MIDDLEPOINT     0x9EACD0   // C3D_MIDDLEPOINT the button drawer creates textures through
@@ -1179,6 +1850,32 @@ static void InstallMinimapPatch()
 #define ED_CH_BAUXITE     6          // what that index becomes by the time it reaches 0x238B00
 
 #define ED_GAMEOBJ_BAUXITE 0x27      // "this map has bauxite"
+
+// The Rocks tab, and the brush behind its rock pair.
+//
+// A deposit in the terrain's material mask is painted by a different primitive
+// from one in a resource map: C3D_TERRAIN::EditMask rather than the deposit
+// texel writer, and the tab that owns it is 0x22EE30 rather than 0x233110.
+// Everything else is the same shape - clone the tool, borrow the vanilla call,
+// rewrite the one argument that differs while it is in flight.
+//
+//   paint_rock / erase_rock    0x235300(self, mode)   EditMask channel 3
+//   paint_oasis / erase_oasis  0x235510(self, mode)   EditMask channel 0
+//
+// Two functions, one constant apart, and the channel encoding is the deposit
+// brush's: channel = (component + 1) & 3. So rock paints component 2, which is
+// exactly the component gravel is mined from.
+#define P_ED_ROCKS_PANEL  0x22EE30   // FUN_14022ee30 - draws the Rocks tab
+#define P_ED_PAINT_ROCK   0x235300   // FUN_140235300 - one rock brush tick
+#define ED_CH_ROCK        3          // the EditMask channel that call passes
+
+// Rocks-tab layout, all read from the game for the same reason the Resources
+// tab's are. x = DPI*(50 + 85), y = DPI*(250 + 80), one button 0.85 wide, and
+// 85 apart across; the mod row sits one 90-step below the vanilla one.
+#define G_ED_ROCK_X_A     0x90AA40   // 50
+#define G_ED_ROCK_X_B     0x90AB2C   // 85 - and the step between buttons
+#define G_ED_ROCK_Y_BASE  0x90ADD0   // 250
+#define G_ED_ROCK_Y_CAP   0x90AB14   // 80
 
 static const BYTE kEdPanelPrologue[] = {
     0x48, 0x8B, 0xC4,                                  // mov rax,rsp
@@ -1205,6 +1902,16 @@ static const BYTE kEdCursorPrologue[] = {
     0x41, 0x55,                                        // push r13
     0x41, 0x56,                                        // push r14
     0x48, 0x8D, 0xA8, 0x88, 0xFE, 0xFF, 0xFF           // lea rbp,[rax-0x178]
+};
+static const BYTE kEdRocksPrologue[] = {
+    0x48, 0x8B, 0xC4,                                  // mov rax,rsp
+    0x55,                                              // push rbp
+    0x53,                                              // push rbx
+    0x56,                                              // push rsi
+    0x57,                                              // push rdi
+    0x41, 0x56,                                        // push r14
+    0x48, 0x8D, 0x68, 0xA1,                            // lea rbp,[rax-0x5f]
+    0x48, 0x81, 0xEC, 0xF0, 0x00, 0x00, 0x00           // sub rsp,0xf0
 };
 static const BYTE kEdTexelsPrologue[] = {
     0x48, 0x8B, 0xC4,                                  // mov rax,rsp
@@ -1233,10 +1940,20 @@ typedef void  (*t_ED_PaintTexels)(void* dead, float* pos, unsigned channel,
 typedef void  (*t_ED_Void1)(void*);
 typedef void* (*t_ED_CreateManagedTexture)(void*, const char*);
 
+// C3D_TERRAIN::EditMask(this, &pos, channel, innerR, outerR, delta, limit, on).
+// The C3DVECTOR3 is declared by value and is twelve bytes, so MSVC passes it by
+// address - which is what the call site at 0x2354xx does and what makes the
+// channel the third argument rather than the fifth.
+typedef void  (*t_ED_EditMask)(void* terrain, float* pos, int channel,
+                               float innerR, float outerR, int delta,
+                               int limit, char on);
+
 static t_ED_Void1       o_ED_Panel;
+static t_ED_Void1       o_ED_Rocks;
 static t_ED_Void1       o_ED_Dispatch;
 static t_ED_Void1       o_ED_Cursor;
 static t_ED_PaintTexels o_ED_PaintTexels;
+static t_ED_EditMask    o_ED_EditMask;
 static t_ED_CreateManagedTexture o_ED_CreateManagedTexture;
 
 static int  g_editorPatch;
@@ -1253,6 +1970,10 @@ static void* g_toolSrcIcon;
 // The texel hook rewrites its argument only while this is set, so every other
 // brush in the editor - bauxite's included - passes through untouched.
 static int  g_brushDep = -1;
+// The editor object, handed over by the per-frame cursor hook and consumed by
+// the terrain overlay one. Non-null for exactly as long as the editor is the
+// thing running - see h_ED_TerrainDraw.
+static void* g_edSelf;
 
 // Overwrites an inline string in a cloned descriptor without touching a byte
 // past its terminator. Only the string itself is rewritten - the descriptor
@@ -1304,19 +2025,39 @@ static void* LoadToolIcon(const char* path)
     return tex;
 }
 
+// The localisation id of the deposit's own name, taken from the record of the
+// resource its `icon` names - the same record the minimap button already reads
+// its texture out of, one field along. Nothing has to be minted: if that
+// resource came from plugins/resources.ini its caption is already a private id
+// the resources plugin answers, and if it is a base-game resource the id is the
+// game's own. 0 leaves the donor's text, which is a wrong name but not a crash.
+static int DepositCaptionId(const DepositDef* d)
+{
+    if (!d->icon[0]) return 0;
+    t_ResourceGet get = (t_ResourceGet)(g_exeBase + P_RESOURCEGET);
+    BYTE* rec = (BYTE*)get(g_exeBase + G_RES_SELF, (void*)d->icon, NULL, NULL);
+    return ReadablePtr(rec, TOOL_CAPTION + sizeof(int)) ? *(int*)(rec + TOOL_CAPTION) : 0;
+}
+
 // Every clone is made from the matching bauxite tool, which is the same kind of
-// tool in every respect that matters, and then differs in two fields: the name,
-// and the icon texture.
+// tool in every respect that matters, and then differs in three fields: the
+// name, the icon texture, and the hover text.
 static bool BuildDepositTools(void* self)
 {
     t_ED_ToolFind find = (t_ED_ToolFind)(g_exeBase + P_ED_TOOL_FIND);
     void* src[2] = { find(self, "paint_bauxite"), find(self, "erase_bauxite") };
+    // The Rocks tab's own pair, for deposits in the terrain mask. Cloning
+    // bauxite's would work as a descriptor, but rock's is the same kind of
+    // brush in the same tab, and taking it keeps the two families honest.
+    void* rock[2] = { find(self, "paint_rock"), find(self, "erase_rock") };
     if (!src[0] || !src[1])
     {
         Logf("editor   FAILED  bauxite tools not in the registry - mod brushes disabled");
         g_editorPatch = 0;
         return false;
     }
+    if (g_terrainCount && (!rock[0] || !rock[1]))
+        Logf("editor   WARN  rock tools not in the registry - terrain-mask brushes dropped");
 
     // Leaving to the main menu and coming back rebuilds the editor's tools from
     // 0x2E9420 and re-creates their icon textures, so clones taken in a previous
@@ -1339,24 +2080,34 @@ static bool BuildDepositTools(void* self)
         DepositDef* d = &g_dep[k];
         if (d->editorColumn < 0) continue;
 
+        bool mask = (d->map == DEP_MAP_TERRAIN);
+        if (mask && (!rock[0] || !rock[1])) { d->editorColumn = -1; continue; }
+
         for (int i = 0; i < 2; i++)
         {
             BYTE* tool = g_toolPool[k][i];
-            memcpy(tool, src[i], TOOL_STRIDE);
+            memcpy(tool, mask ? rock[i] : src[i], TOOL_STRIDE);
 
             char name[64], icon[MAX_PATH];
             _snprintf_s(name, sizeof(name), _TRUNCATE, "%s_%s", kVerb[i], d->editor);
             _snprintf_s(icon, sizeof(icon), _TRUNCATE, "editor/tool_%s.png", name);
 
-            // The name has to fit in bauxite's, so the editor key is capped at
-            // seven characters. Refusing one tool but keeping the other would
-            // leave a brush that paints but cannot be turned off, so this drops
-            // the whole pair.
+            // The name has to fit in the one it replaces, so the editor key is
+            // capped at seven characters against bauxite's `paint_bauxite` and
+            // at **four** against rock's `paint_rock`. Refusing one tool but
+            // keeping the other would leave a brush that paints but cannot be
+            // turned off, so this drops the whole pair.
             if (!ReplaceInlineString(tool, TOOL_NAME, name, "tool name"))
             {
                 d->editorColumn = -1;
                 break;
             }
+
+            // The donor's caption would say "Bauxite" or "Rock" under a copper
+            // brush. The record's caption id is the deposit's own name in
+            // whatever language the game is running in, and 0 means the entry
+            // named no resource - in which case the donor's text stands.
+            if (int caption = DepositCaptionId(d)) *(int*)(tool + TOOL_CAPTION) = caption;
 
             void* tex = LoadToolIcon(icon);
             // Falling back to bauxite's texture is deliberate: a button that
@@ -1402,6 +2153,16 @@ static int ActiveDepositTool(void* self, int* modeOut)
     return -1;
 }
 
+// Hands the hovered tool to the engine's own tooltip, which is what the panel
+// does with its accumulator on the way out and what an appended hook is too late
+// to be part of. Null when nothing is hovered, and the callee already treats
+// that as "no tooltip", so this is called unconditionally.
+static void ShowToolTip(void* self, void* hovered)
+{
+    typedef void (*t_ToolTip)(void*, void*);
+    ((t_ToolTip)(g_exeBase + P_ED_TOOLTIP))(self, hovered);
+}
+
 // Appends one paint/erase pair per mod deposit to the Resources tab, to the
 // right of the vanilla five, on the same two rows and from the same constants
 // the vanilla grid uses.
@@ -1423,16 +2184,48 @@ static void DrawDepositTools(BYTE* self)
     float yErase = yPaint + dpi * MM_F(G_ED_ROW_STEP) * button;
 
     t_ED_DrawButton draw = (t_ED_DrawButton)(g_exeBase + P_ED_DRAW_BUTTON);
+    void* acc = NULL;                 // one for the whole row, as the vanilla has
     for (int k = 0; k < g_depCount; k++)
     {
         DepositDef* d = &g_dep[k];
-        if (d->editorColumn < 0 || !d->toolPaint || !d->toolErase) continue;
+        if (d->editorColumn < 0 || d->map == DEP_MAP_TERRAIN) continue;
+        if (!d->toolPaint || !d->toolErase) continue;
 
         float x = x0 + (float)d->editorColumn * xStep;
-        void* acc = NULL;
         draw(self, d->toolPaint, &acc, x, yPaint, button, 0, 1, 1);
         draw(self, d->toolErase, &acc, x, yErase, button, 0, 1, 1);
     }
+    ShowToolTip(self, acc);
+}
+
+// The same, for the Rocks tab and the deposits that live in the terrain's mask.
+// Its vanilla pairs are laid out **across a single row** - paint then erase, one
+// 85-step apart - rather than in two-row columns, so the mod pairs go on a
+// second row underneath, from the tab's own constants.
+static void DrawRockTools(BYTE* self)
+{
+    if (!BuildDepositTools(self)) return;
+
+    float dpi    = MM_F(G_DPI);
+    float button = MM_F(G_ED_BUTTON);
+    float step   = dpi * MM_F(G_ED_ROCK_X_B) * button;
+    float x0     = dpi * MM_F(G_ED_ROCK_X_A) + dpi * MM_F(G_ED_ROCK_X_B);
+    float y      = dpi * MM_F(G_ED_ROCK_Y_BASE) + dpi * MM_F(G_ED_ROCK_Y_CAP)
+                 + dpi * MM_F(G_ED_ROW_STEP) * button;
+
+    t_ED_DrawButton draw = (t_ED_DrawButton)(g_exeBase + P_ED_DRAW_BUTTON);
+    void* acc = NULL;
+    for (int k = 0; k < g_depCount; k++)
+    {
+        DepositDef* d = &g_dep[k];
+        if (d->editorColumn < 0 || d->map != DEP_MAP_TERRAIN) continue;
+        if (!d->toolPaint || !d->toolErase) continue;
+
+        float x = x0 + (float)(d->editorColumn * 2) * step;
+        draw(self, d->toolPaint, &acc, x,        y, button, 0, 1, 1);
+        draw(self, d->toolErase, &acc, x + step, y, button, 0, 1, 1);
+    }
+    ShowToolTip(self, acc);
 }
 
 static void h_ED_Panel(void* self)
@@ -1447,8 +2240,32 @@ static void h_ED_Panel(void* self)
     }
 }
 
+static void h_ED_Rocks(void* self)
+{
+    o_ED_Rocks(self);
+    if (!g_editorPatch) return;
+    __try { DrawRockTools((BYTE*)self); }
+    __except (FaultFilter("editor rock buttons", GetExceptionInformation()))
+    {
+        g_editorPatch = 0;
+        Logf("editor   mod brushes disabled for this session");
+    }
+}
+
 static void PaintDeposit(void* self, int dep, int mode)
 {
+    // A deposit in the terrain's mask has its own primitive and its own vanilla
+    // brush to borrow. Nothing in the rock brush touches the "this map has X"
+    // bytes, so there is nothing to save and restore on this path.
+    if (g_dep[dep].map == DEP_MAP_TERRAIN)
+    {
+        typedef void (*t_RockBrush)(void*, char);
+        g_brushDep = dep;
+        ((t_RockBrush)(g_exeBase + P_ED_PAINT_ROCK))(self, (char)mode);
+        g_brushDep = -1;
+        return;
+    }
+
     BYTE* gameobj = *(BYTE**)(g_exeBase + G_GAMEOBJ);
     if (!ReadablePtr(gameobj, ED_GAMEOBJ_BAUXITE + 1)) return;
     BYTE saved = gameobj[ED_GAMEOBJ_BAUXITE];
@@ -1484,8 +2301,137 @@ static void h_ED_Cursor(void* self)
 {
     o_ED_Cursor(self);
     if (!g_editorPatch) return;
+
+    // Also the one place the editor object is handed over every frame *and only
+    // while the editor is running*, which is what the terrain overlay below
+    // needs: it hangs off a render function that runs in the game as well, and
+    // a pointer that is merely non-null would leave a stale tool selected.
+    g_edSelf = self;
+
     if (ActiveDepositTool(self, NULL) >= 0 && ReadablePtr((BYTE*)self + ED_BRUSH_CURSOR, 1))
         *((BYTE*)self + ED_BRUSH_CURSOR) = 1;
+}
+
+// ---------------------------------------------------------------- the red terrain overlay
+//
+// Painting a vanilla deposit turns the editor's terrain grid red where the
+// channel is rich. That is a render pass of its own at rva 0xAEE0, and it is
+// driven by **six bytes in the game object** - one per channel the base game
+// can paint, each carrying that channel's unit vector:
+//
+//   +0x23 coal      resourcemap  component 2   (0,0,1,0)  0x90BDF0
+//   +0x24 iron      resourcemap  component 1   (0,1,0,0)  0x90BDA0
+//   +0x25 oil       resourcemap  component 0   (1,0,0,0)  0x90BD80
+//   +0x26 uranium   resourcemap2 component 0   (1,0,0,0)
+//   +0x27 bauxite   resourcemap2 component 1   (0,1,0,0)
+//   +0x28 -         resourcemap2 component 2   (0,0,1,0)
+//
+// The brush at 0x2350D0 sets its own byte on the way past, which is why the
+// overlay appears the moment you paint. **There is no byte for component 3 of
+// either map**, so copper never had one to set - and this plugin's brush hook
+// restores the bauxite byte it borrows on purpose, so it sets nothing either.
+//
+// The pass is otherwise entirely generic. It swaps the terrain's mask texture
+// (terrain+0x158) for the resource map, binds the "Resources" technique, hands
+// the shader one float4, renders, and puts both back. The pixel shader is four
+// instructions:
+//
+//     float a = dot(SelectedResources, tex.Sample(uv));   // dp4
+//     o = float4(1,1,1,1) + a * float4(1.5,-1,-1,0);      // white -> red
+//
+// A dp4, exactly like the minimap's, so component 3 was reachable all along and
+// only the flag was missing.
+//
+// Which is why this hook reproduces nothing. It **brackets** the vanilla pass:
+// set the flag whose vector is the component wanted, point the map that pass
+// reads at whichever texture this deposit actually lives in, let the engine
+// draw its own overlay, and put all of it back.
+
+#define P_ED_TERRAIN_RVA  0xAEE0     // FUN_14000aee0 - contour lines and the resource overlay
+#define G_OVL_FLAGS       0x23       // gameobj, six bytes, one per paintable channel
+#define G_OVL_COUNT       6
+#define G_OVL_VEC_C2      0x90BDF0   // the float4 the +0x23 branch passes: (0,0,1,0)
+
+static const BYTE kEdTerrainPrologue[] = {
+    0x48, 0x8B, 0xC4,                   // mov rax,rsp
+    0x48, 0x89, 0x50, 0x10,             // mov [rax+0x10],rdx
+    0x48, 0x89, 0x48, 0x08,             // mov [rax+0x08],rcx
+    0x55,                               // push rbp
+    0x53,                               // push rbx
+    0x56,                               // push rsi
+    0x57                                // push rdi
+};
+
+// Its one caller sets up no arguments at all - 0x482824 is a bare CALL after an
+// unrelated one - and the two the prologue spills are never read. Taking none is
+// therefore not an approximation.
+typedef void (*t_ED_TerrainDraw)(void);
+static t_ED_TerrainDraw o_ED_TerrainDraw;
+
+// Which of the six flags carries the unit vector for a component. Component 3
+// has none and borrows coal's, whose vector is rewritten below.
+static int OverlayFlagFor(int component)
+{
+    return component == 0 ? 2 : component == 1 ? 1 : 0;
+}
+
+static void h_ED_TerrainDraw(void)
+{
+    // One editor frame, one overlay. The cursor hook runs only in the editor and
+    // only once a frame, so consuming the pointer here is both the gate and the
+    // guarantee that a tool left selected in a previous session cannot paint the
+    // terrain red in the middle of a game.
+    void* self = g_edSelf;
+    g_edSelf = NULL;
+
+    int dep = (self && g_editorPatch) ? ActiveDepositTool(self, NULL) : -1;
+    if (dep < 0) { o_ED_TerrainDraw(); return; }
+
+    const DepositDef* d       = &g_dep[dep];
+    BYTE*             gameobj = *(BYTE**)(g_exeBase + G_GAMEOBJ);
+    void*             tex     = DepositMapTexture(d);
+
+    if (!tex || !ReadablePtr(gameobj, P_MAP1_OFF + sizeof(void*)))
+    { o_ED_TerrainDraw(); return; }
+
+    BYTE  savedFlags[G_OVL_COUNT];
+    void* savedTex = *(void**)(gameobj + P_MAP1_OFF);
+    memcpy(savedFlags, gameobj + G_OVL_FLAGS, G_OVL_COUNT);
+
+    // Every flag cleared, then exactly ours: the pass takes the first one set,
+    // so a map that really does have coal would otherwise draw coal over us.
+    // The texture goes in resourcemap's slot whatever map the deposit is on,
+    // which is what makes resourcemap2 and the plugin's own maps work through
+    // the branch that only knows how to read the first.
+    memset(gameobj + G_OVL_FLAGS, 0, G_OVL_COUNT);
+    gameobj[G_OVL_FLAGS + OverlayFlagFor(d->component)] = 1;
+    *(void**)(gameobj + P_MAP1_OFF) = tex;
+
+    float  savedVec[4];
+    float* vec     = (float*)(g_exeBase + G_OVL_VEC_C2);
+    DWORD  prot    = 0;
+    bool   patched = false;
+    if (d->component == 3 && VirtualProtect(vec, sizeof(savedVec), PAGE_READWRITE, &prot))
+    {
+        // Sixteen bytes of .rdata, for the length of one call, restored before
+        // anything else can read them. Its only other readers are the +0x28
+        // branch of this same function - which we just cleared - and the minimap
+        // overlay, which is a different function on the same thread.
+        memcpy(savedVec, vec, sizeof(savedVec));
+        vec[0] = vec[1] = vec[2] = 0.0f;
+        vec[3] = 1.0f;
+        patched = true;
+    }
+
+    o_ED_TerrainDraw();
+
+    if (patched)
+    {
+        memcpy(vec, savedVec, sizeof(savedVec));
+        VirtualProtect(vec, sizeof(savedVec), prot, &prot);
+    }
+    *(void**)(gameobj + P_MAP1_OFF) = savedTex;
+    memcpy(gameobj + G_OVL_FLAGS, savedFlags, G_OVL_COUNT);
 }
 
 static void h_ED_PaintTexels(void* dead, float* pos, unsigned channel,
@@ -1495,9 +2441,53 @@ static void h_ED_PaintTexels(void* dead, float* pos, unsigned channel,
     // Guarded on one of our own calls being in flight, so every other brush in
     // the editor - including bauxite's, whose index we borrowed to get here -
     // passes through untouched.
-    if (g_brushDep >= 0 && g_brushDep < g_depCount && channel == ED_CH_BAUXITE)
-        channel = (unsigned)g_dep[g_brushDep].editorChannel;
+    if (g_brushDep < 0 || g_brushDep >= g_depCount || channel != ED_CH_BAUXITE)
+    {
+        o_ED_PaintTexels(dead, pos, channel, innerR, outerR, delta, limit, bracket);
+        return;
+    }
+
+    const DepositDef* d = &g_dep[g_brushDep];
+    channel = (unsigned)d->editorChannel;
+
+    // A map past the engine's two cannot be named by a channel index: the writer
+    // decodes bit 2 of it into one of exactly two pointers in the game object.
+    // So the deposit's own texture is put in resourcemap2's slot for the length
+    // of the call and taken straight back out. Reimplementing the writer instead
+    // would mean reimplementing its bracket, its bilinear footprint and its
+    // clamping, for the sake of one pointer.
+    void** slot  = NULL;
+    void*  saved = NULL;
+
+    if (d->map >= DEP_MAP_EXTRA)
+    {
+        void* tex     = DepositMapTexture(d);
+        BYTE* gameobj = *(BYTE**)(g_exeBase + G_GAMEOBJ);
+        if (!tex || !ReadablePtr(gameobj, P_MAP2_OFF + sizeof(void*)))
+            return;     // its map never loaded; painting into bauxite's is worse
+
+        slot  = (void**)(gameobj + P_MAP2_OFF);
+        saved = *slot;
+        *slot = tex;
+    }
+
     o_ED_PaintTexels(dead, pos, channel, innerR, outerR, delta, limit, bracket);
+
+    if (slot) *slot = saved;
+}
+
+// The same trick as the deposit texel hook, one primitive over: the rock brush
+// is borrowed whole and the single argument that names the channel is rewritten
+// while one of our calls is in flight. Every other caller of EditMask - the
+// material brushes on the terrain tab included - passes through untouched.
+static void h_ED_EditMask(void* terrain, float* pos, int channel,
+                          float innerR, float outerR, int delta,
+                          int limit, char on)
+{
+    if (g_brushDep >= 0 && g_brushDep < g_depCount &&
+        g_dep[g_brushDep].map == DEP_MAP_TERRAIN && channel == ED_CH_ROCK)
+        channel = g_dep[g_brushDep].editorChannel;
+    o_ED_EditMask(terrain, pos, channel, innerR, outerR, delta, limit, on);
 }
 
 static void InstallEditorPatch()
@@ -1537,7 +2527,42 @@ static void InstallEditorPatch()
         g_editorPatch = 0;
         return;
     }
-    Logf("editor   %d mod brush pair(s) hooked", brushes);
+
+    // Separately, and not fatal: without it the brush paints correctly and the
+    // terrain simply does not turn red under it, which is what every version
+    // before this one did.
+    if (!InstallInlineHook(g_exeBase + P_ED_TERRAIN_RVA, (void*)h_ED_TerrainDraw,
+                           (void**)&o_ED_TerrainDraw, kEdTerrainPrologue,
+                           sizeof(kEdTerrainPrologue), "editor terrain overlay"))
+        Logf("editor   WARN  no terrain overlay - a mod brush will paint a channel "
+             "nothing draws");
+
+    // The Rocks tab and its primitive, and only when a deposit lives in the
+    // terrain's mask. Half of this pair is worse than none - a button that
+    // selects a tool which then paints rock - so both or neither.
+    int maskBrushes = 0;
+    for (int i = 0; i < g_depCount; i++)
+        if (g_dep[i].map == DEP_MAP_TERRAIN && g_dep[i].editorColumn >= 0) maskBrushes++;
+
+    if (maskBrushes)
+    {
+        bool ok = PatchIat(g_exe, DLL_ENGINE, "?EditMask@C3D_TERRAIN@@QEAAXVC3DVECTOR3@@HMMHH_N@Z",
+                           (void*)h_ED_EditMask, (void**)&o_ED_EditMask, "C3D_TERRAIN::EditMask");
+        if (ok)
+            ok = InstallInlineHook(g_exeBase + P_ED_ROCKS_PANEL, (void*)h_ED_Rocks,
+                                   (void**)&o_ED_Rocks, kEdRocksPrologue,
+                                   sizeof(kEdRocksPrologue), "editor rocks panel");
+        if (!ok)
+        {
+            Logf("editor   terrain-mask brushes disabled - %d pair(s) dropped", maskBrushes);
+            for (int i = 0; i < g_depCount; i++)
+                if (g_dep[i].map == DEP_MAP_TERRAIN) g_dep[i].editorColumn = -1;
+            maskBrushes = 0;
+        }
+    }
+
+    Logf("editor   %d mod brush pair(s) hooked, %d of them in the Rocks tab",
+         brushes, maskBrushes);
 }
 
 // ---------------------------------------------------------------- the plugin
@@ -1556,11 +2581,22 @@ static int svc_Get(int i, TsmDeposit* out)
     out->token        = d->token;
     out->type         = d->type;
     out->buildingType = d->buildingType;
-    out->map          = d->map == DEP_MAP_2 ? TSM_MAP_RESOURCEMAP2 : TSM_MAP_RESOURCEMAP;
+    // The same numbering TSM_MAP_* documents: 0 and 1 are the engine's, 2 and up
+    // are this plugin's, and the value is always the filename's digit minus one.
+    out->map          = d->map == DEP_MAP_TERRAIN ? TSM_MAP_TERRAIN : d->map;
     out->component    = d->component;
     out->radius       = d->radiusRva ? *(float*)(g_exeBase + d->radiusRva) : d->radiusValue;
     out->icon         = d->icon;
     return 1;
+}
+
+// Saves a consumer from knowing which kind of map a deposit landed on. The two
+// the engine owns come out of the game object, ours out of this plugin's table,
+// and both are re-read on every call because a world load replaces them.
+static void* svc_Texture(int i)
+{
+    if (i < 0 || i >= g_depCount) return NULL;
+    return DepositMapTexture(&g_dep[i]);
 }
 
 static const char* svc_Setting(int i, const char* key)
@@ -1572,7 +2608,7 @@ static const char* svc_Setting(int i, const char* key)
     return NULL;
 }
 
-static const TsmDepositApi kDepositApi = { svc_Count, svc_Get, svc_Setting };
+static const TsmDepositApi kDepositApi = { svc_Count, svc_Get, svc_Setting, svc_Texture };
 
 extern "C" __declspec(dllexport) unsigned TsmPluginApiVersion(void)
 {
@@ -1583,7 +2619,7 @@ extern "C" __declspec(dllexport) int TsmPluginInit(const TsmHost* host, TsmPlugi
 {
     TsmBind(host);
     info->name    = "deposits";
-    info->version = "1.0";
+    info->version = "1.1";
 
     const char* ini = "plugins\\deposits.ini";
     g_depositPatch = H->configInt(ini, "deposits", "code_patch", g_depositPatch);
@@ -1595,6 +2631,11 @@ extern "C" __declspec(dllexport) int TsmPluginInit(const TsmHost* host, TsmPlugi
     // allowed to touch the game.
     LoadDepositRegistry();
     ValidateDeposits();
+
+    // Before the code patch, because the patch reserves the cave slots the
+    // dispatch reads its textures from and this decides how many are needed.
+    // Does nothing at all unless a section named a map past the engine's two.
+    InstallExtraMaps();
 
     if (g_depositPatch) PatchDepositType();
     if (g_minimapPatch) InstallMinimapPatch();

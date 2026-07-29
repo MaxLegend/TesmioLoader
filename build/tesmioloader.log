@@ -1,576 +1,337 @@
-[10:50:09.648] tesmioloader phase B
-[10:50:09.648] exe base  00007FF7CA950000    engine base 00007FFE01B50000
-[10:50:09.648] vfs root  A:\SteamLibrary\steamapps\common\SovietRepublic\tesmioloader\build\vfs (on)
-[10:50:09.648] ---
-[10:50:09.648] hook ok      ReadFileIntoBuffer     orig=00007FFE01BC79B0
-[10:50:09.648] hook ok      CheckIfFileExist       orig=00007FFE01BC7B80
-[10:50:09.648] hook ok      C3DLog_PrintInfo       orig=00007FFE01BEC700
-[10:50:09.648] hook ok      C3DLog_PrintWarning    orig=00007FFE01BEC7F0
-[10:50:09.648] hook ok      C3DLog_PrintError      orig=00007FFE01BEC8E0
-[10:50:09.648] hook ok      fopen                  orig=00007FFEBFFE55D0
-[10:50:09.648] hook ok      fopen_s                orig=00007FFEBFFE55F0
-[10:50:09.648] hook ok      _wfopen                orig=00007FFEBFFE5550
-[10:50:09.648] hook ok      _wfopen_s              orig=00007FFEBFFE5570
-[10:50:09.648] hook ok      fread                  orig=00007FFEBFF87ED0
-[10:50:09.648] hook ok      engine fopen           orig=00007FFEBFFE55D0
-[10:50:09.648] hook ok      engine fopen_s         orig=00007FFEBFFE55F0
-[10:50:09.648] hook ok      engine _wfopen         orig=00007FFEBFFE5550
-[10:50:09.648] hook ok      engine fread           orig=00007FFEBFF87ED0
-[10:50:09.648] hook ok      engine CreateFileA     orig=00007FFEC1D04E90
-[10:50:09.648] hook ok      engine CreateFile2     orig=00007FFEC1D04E80
-[10:50:09.648] hook ok      CreateFileW            orig=00007FFEC1D04EA0
-[10:50:09.648] texel  vtable hooked: Load2DFromFile=00007FFE01B679F0 GetTexel=00007FFE01B69080
-[10:50:09.648] menu     version line -> "v%d.%d.%d.%d (64 bit DX11.1 - GPU: %ls) | tsmloader a0.2."
-[10:50:09.649] plugin   accumulator      1.0      from accumulator.dll
-[10:50:09.650] plugin   depletion        1.1      from depletion.dll
-[10:50:09.651] deposits  "copper" type 10 "$TYPE_MINE_COPPER" -> resourcemap2 component 3, radius from the game, editor channel 4 (slot 5, column 5)
-[10:50:09.651] patch  deposit type 10 added: "$TYPE_MINE_COPPER" in building.ini, resourcemap2 component 3
-[10:50:09.651] patch  cave at 00007FF7CA930000, 2287 of 8192 bytes used (parser 00007FF7CA930800, dispatch 00007FF7CA930868, radius 00007FF7CA9308C7)
-[10:50:09.651] hook ok      minimap overlay        target=00007FF7CAE0DDE0 tramp=000001A9B6CD0000 (16 bytes stolen)
-[10:50:09.651] hook ok      minimap row            target=00007FF7CAE0FEA0 tramp=000001A9B6CE0000 (15 bytes stolen)
-[10:50:09.651] minimap  1 mod layer(s) hooked
-[10:50:09.651] hook ok      editor panel           target=00007FF7CAB83110 tramp=000001A9B87B0000 (19 bytes stolen)
-[10:50:09.651] hook ok      editor dispatch        target=00007FF7CAC5D100 tramp=000001A9B87C0000 (23 bytes stolen)
-[10:50:09.651] hook ok      editor cursor          target=00007FF7CAC40E70 tramp=000001A9B87D0000 (21 bytes stolen)
-[10:50:09.651] hook ok      editor texels          target=00007FF7CAB88B00 tramp=000001A9B87E0000 (21 bytes stolen)
-[10:50:09.651] editor   1 mod brush pair(s) hooked
-[10:50:09.651] plugin   service "deposits" v1 from deposits.dll
-[10:50:09.651] plugin   deposits         1.0      from deposits.dll
-[10:50:09.651] plugin   needs            1.0      from needs.dll
-[10:50:09.652] registry  "copper_ore" -> next free slot, template 18, text id 1000000
-[10:50:09.652] registry  "copper_concentrate" -> next free slot, template 19, text id 1000001
-[10:50:09.652] registry  "raw_copper" -> next free slot, template 8, text id 1000002
-[10:50:09.652] registry  "copper" -> next free slot, template 9, text id 1000003
-[10:50:09.652] registry  "furniture" -> next free slot, template 42, text id 1000004
-[10:50:09.652] hook ok      C3D_LANGUAGE::GetString orig=00007FFE01BE7F10
-[10:50:09.652] hook ok      ResourceGet            target=00007FF7CABFA7C0 tramp=000001A9B8800000 (20 bytes stolen)
-[10:50:09.652] resource  hook mode=2 rva=0x2AA7C0, 5 name(s) declared
-[10:50:09.652] plugin   service "resources" v1 from resources.dll
-[10:50:09.652] plugin   resources        1.0      from resources.dll
-[10:50:09.654] plugin   walking          1.3      from walking.dll
-[10:50:09.654] hook ok      substation share       target=00007FF7CAB09640 tramp=000001A9B8810000 (23 bytes stolen)
-[10:50:09.654] hook ok      building dispatcher    target=00007FF7CAA89A80 tramp=000001A9B8820000 (19 bytes stolen)
-[10:50:09.654] hook ok      electric panel         target=00007FF7CB052610 tramp=000001A9B8830000 (14 bytes stolen)
-[10:50:09.654] battery  charge 60/s, discharge 60/s, battery is a class-9 storage of at least 500 on a building of type 18 (or another listed)
-[10:50:09.654] hook ok      C3D_TERRAIN::Render    orig=00007FFE01C47560
-[10:50:09.654] hook ok      mine tick              target=00007FF7CAB03690 tramp=000001A9B8840000 (15 bytes stolen)
-[10:50:09.654] hook ok      mine panel             target=00007FF7CB0D6AC0 tramp=000001A9B8850000 (21 bytes stolen)
-[10:50:09.654] deplete  oil        type 0   resourcemap  component 0, 1200 t per saturated texel
-[10:50:09.654] deplete  iron       type 1   resourcemap  component 1, 1200 t per saturated texel
-[10:50:09.654] deplete  coal       type 2   resourcemap  component 2, 1200 t per saturated texel
-[10:50:09.654] deplete  uranium    type 6   resourcemap2 component 0, 1200 t per saturated texel
-[10:50:09.654] deplete  bauxite    type 7   resourcemap2 component 1, 1200 t per saturated texel
-[10:50:09.654] deplete  gravel     type 3   terrain mask component 2, 30000 t per saturated texel
-[10:50:09.654] deplete  copper     type 10  resourcemap2 component 3, 1200 t per saturated texel
-[10:50:09.654] deplete  7 deposit type(s) will run out, map written every 5 s
-[10:50:09.654] hook ok      citizen demand plan    target=00007FF7CB186960 tramp=000001A9B8860000 (20 bytes stolen)
-[10:50:09.654] hook ok      storage slot list      target=00007FF7CAA340F0 tramp=000001A9B8870000 (19 bytes stolen)
-[10:50:09.654] hook ok      shop tick              target=00007FF7CAAC1DA0 tramp=000001A9B8880000 (21 bytes stolen)
-[10:50:09.654] hook ok      building type loader   target=00007FF7CAA6D810 tramp=000001A9B8890000 (23 bytes stolen)
-[10:50:09.654] needs    furniture          like "eletronics" x1.00, advanced storages, chance 0.35, unhappiness 0.010
-[10:50:09.654] needs    1 need(s), demand on, storage on, at most 7 demand(s) per citizen (skip when full)
-[10:50:09.654] walking  walk build batch 480 -> 1000  (rva 0x12E2DD, immediate)
-[10:50:09.654] walking  walk build queued 480 -> 1000  (rva 0x12E7AF now reads 00007FF7CA920000)
-[10:50:09.654] walking  walk overlay     480 -> 1000  (rva 0x43F04A now reads 00007FF7CA920000)
-[10:50:09.654] walking  walk overlay 2   480 -> 1000  (rva 0x43F835 now reads 00007FF7CA920000)
-[10:50:09.654] walking  car build        2500 -> 2500  (rva 0x12F926 now reads 00007FF7CA920004)
-[10:50:09.654] walking  car overlay      2500 -> 2500  (rva 0x43FFB3 now reads 00007FF7CA920004)
-[10:50:09.654] walking  walk rebuild     530 -> 1000  (rva 0x12DEA7 now reads 00007FF7CA920008)
-[10:50:09.654] walking  car rebuild      2600 -> 2600  (rva 0x12F502 now reads 00007FF7CA92000C)
-[10:50:09.654] walking  regen on: every load rebuilds all walking and parking connections
-[10:50:09.654] plugin   6 loaded
-[10:50:09.654] --- hooks installed ---
-[10:50:09.747] game.WARN  1
-[10:50:09.747] game.WARN  2
-[10:50:09.747] game.WARN  3
-[10:50:09.747] game.WARN  4
-[10:50:09.748] game.WARN  5
-[10:50:09.749] game.WARN  6
-[10:50:09.749] game.WARN  6
-[10:50:09.749] game.WARN  7
-[10:50:09.757] game.WARN  Monitor 0
-[10:50:09.757] game.WARN  Position 0 0
-[10:50:09.757] game.WARN  Size 1920 1080
-[10:50:09.758] game.WARN  8
-[10:50:09.787] game.ERROR setfocus
-[10:50:10.133] game.ERROR currentlanguage russian
-[10:50:12.609] game.ERROR Failed to open header for enumeration media_soviet/saved_last/header.bin
-[10:50:49.213] game.ERROR setfocus
-[10:50:53.433] game.WARN  Workshop subscribed items num 2501
-[10:51:04.474] game.ERROR setfocus
-[10:51:15.858] game.WARN  Workshop subscribed items num 2501
-[10:51:19.114] game.WARN  Workshop subscribed items num 2501
-[10:51:20.415] game.ERROR Cannot open A:\SteamLibrary\steamapps\workshop\content\784150\2267431874\headerE.bin editor header
-[10:51:20.430] game.ERROR Cannot open media_soviet/workshop_wip/2123044941/headerE.bin editor header
-[10:51:20.432] game.ERROR Cannot open media_soviet/workshop_wip/2227015925/headerE.bin editor header
-[10:51:20.435] game.ERROR Cannot open media_soviet/workshop_wip/2328603677/headerE.bin editor header
-[10:51:20.436] game.ERROR Cannot open media_soviet/workshop_wip/2363667274/headerE.bin editor header
-[10:51:20.440] game.WARN  found save editor-autosave4
-[10:51:26.928] game.info  v1.1.1.7 (64 bit DX11.1)
-[10:51:28.020] game.info  Loading string --- Initializing workshop items
-[10:51:28.054] game.WARN  Workshop subscribed items num 2501
-[10:51:30.569] game.info  Loading string --- Loading weather
-[10:51:30.646] game.info  Loading string --- Loading sky
-[10:51:30.653] game.info  Loading string --- Loading underground
-[10:51:30.658] game.info  Loading string --- Initializing post effect
-[10:51:30.668] game.info  Loading string --- Initializing water
-[10:51:30.693] game.info  Loading string --- Loading terrain
-[10:51:30.976] game.info  Loading string --- Initializing clouds
-[10:51:30.978] game.info  Loading string --- Initializing particle effects
-[10:51:31.026] game.info  Loading string --- Loading paths
-[10:51:31.031] game.info  Loading string --- Initializing grass
-[10:51:31.033] game.info  Loading string --- Initializing trees
-[10:51:31.040] game.info  Loading string --- Importing trees
-[10:51:31.450] game.info  Loading string --- Initializing buildings
-[10:51:31.467] game.info  Loading string --- Importing buildings
-[10:51:32.444] game.info  Loading string --- Initializing Ambients
-[10:51:32.609] game.info  Loading string --- Initializing shadow system
-[10:51:32.610] game.info  Loading string --- Initializing far map
-[10:51:32.611] game.info  Loading string --- Initializing emissive map
-[10:51:32.612] game.info  Loading string --- Initializing resource map
-[10:51:32.617] texel  deposit map texture 0 = 000001AA75FB1370 (campaign1/resourcemap.dds)
-[10:51:32.618] vfs  fopen  media_soviet/campaign1/resourcemap2.dds
-[10:51:32.618] vfs  fopen  media_soviet/campaign1/resourcemap2.dds
-[10:51:32.623] texel  deposit map texture 1 = 000001AA75FB3A70 (campaign1/resourcemap2.dds)
-[10:51:32.623] game.info  Loading string --- Initializing clouds shadow map
-[10:51:32.645] game.info  Loading string --- Import - Loading header
-[10:51:32.645] game.info  Opening headerE
-[10:51:32.666] game.info  Loading string --- Initializing shaders
-[10:51:32.685] game.info  Loading string --- Initializing screen marks
-[10:51:32.731] game.info  Loading string --- Initializing preview shot system
-[10:51:32.732] game.info  Loading string --- Initializing mud remove
-[10:51:32.733] game.info  Loading string --- Initializing main tabs
-[10:51:32.734] game.info  Loading string --- Initializing resources
-[10:51:32.812] resource  array now at 000001AAB6C67EE0
-[10:51:32.812] resource  name field at +0x0, 57 live records, room for 63
-[10:51:32.813] vfs  fopen  media_soviet/resources/copper_ore_vehicle.nmf
-[10:51:32.813] vfs  fopen  media_soviet/resources/copper_ore_vehicle.nmf
-[10:51:32.814] vfs  fopen  media_soviet/resources/copper_ore1.nmf
-[10:51:32.814] vfs  fopen  media_soviet/resources/copper_ore1.nmf
-[10:51:32.815] vfs  fopen  media_soviet/resources/copper_ore2.nmf
-[10:51:32.815] vfs  fopen  media_soviet/resources/copper_ore2.nmf
-[10:51:32.816] vfs  fopen  media_soviet/resources/copper_ore3.nmf
-[10:51:32.816] vfs  fopen  media_soviet/resources/copper_ore3.nmf
-[10:51:32.817] vfs  fopen  media_soviet/resources/copper_ore4.nmf
-[10:51:32.817] vfs  fopen  media_soviet/resources/copper_ore4.nmf
-[10:51:32.817] resource  "copper_ore" cargo meshes: 0 of 5 (bulk) replaced
-[10:51:32.817] resource  WARN  "copper_ore" has no cargo geometry under media_soviet/resources - it will be drawn as its template. Add copper_ore.nmf and copper_ore.mtl, or drop it from [list]
-[10:51:32.817] vfs  fopen  media_soviet/resources/copper_ore.png
-[10:51:32.817] resource  "copper_ore" published as index 57 (template 18, caption 1000000), vector now 58
-[10:51:32.817] vfs  fopen  media_soviet/resources/copper_concentrate_vehicle.nmf
-[10:51:32.817] vfs  fopen  media_soviet/resources/copper_concentrate_vehicle.nmf
-[10:51:32.818] vfs  fopen  media_soviet/resources/copper_concentrate1.nmf
-[10:51:32.818] vfs  fopen  media_soviet/resources/copper_concentrate1.nmf
-[10:51:32.818] vfs  fopen  media_soviet/resources/copper_concentrate2.nmf
-[10:51:32.818] vfs  fopen  media_soviet/resources/copper_concentrate2.nmf
-[10:51:32.819] vfs  fopen  media_soviet/resources/copper_concentrate3.nmf
-[10:51:32.819] vfs  fopen  media_soviet/resources/copper_concentrate3.nmf
-[10:51:32.819] vfs  fopen  media_soviet/resources/copper_concentrate4.nmf
-[10:51:32.819] vfs  fopen  media_soviet/resources/copper_concentrate4.nmf
-[10:51:32.820] resource  "copper_concentrate" cargo meshes: 0 of 5 (bulk) replaced
-[10:51:32.820] resource  WARN  "copper_concentrate" has no cargo geometry under media_soviet/resources - it will be drawn as its template. Add copper_concentrate.nmf and copper_concentrate.mtl, or drop it from [list]
-[10:51:32.820] vfs  fopen  media_soviet/resources/copper_concentrate.png
-[10:51:32.820] resource  "copper_concentrate" published as index 58 (template 19, caption 1000001), vector now 59
-[10:51:32.820] vfs  fopen  media_soviet/resources/raw_copper.nmf
-[10:51:32.821] vfs  fopen  media_soviet/resources/raw_copper.nmf
-[10:51:32.822] resource  "raw_copper" cargo meshes: 0 of 1 (open) replaced
-[10:51:32.822] resource  WARN  "raw_copper" has no cargo geometry under media_soviet/resources - it will be drawn as its template. Add raw_copper.nmf and raw_copper.mtl, or drop it from [list]
-[10:51:32.822] vfs  fopen  media_soviet/resources/raw_copper.png
-[10:51:32.822] resource  "raw_copper" published as index 59 (template 8, caption 1000002), vector now 60
-[10:51:32.822] vfs  fopen  media_soviet/resources/copper.nmf
-[10:51:32.822] vfs  fopen  media_soviet/resources/copper.nmf
-[10:51:32.823] resource  "copper" cargo meshes: 0 of 1 (open) replaced
-[10:51:32.823] resource  WARN  "copper" has no cargo geometry under media_soviet/resources - it will be drawn as its template. Add copper.nmf and copper.mtl, or drop it from [list]
-[10:51:32.823] vfs  fopen  media_soviet/resources/copper.png
-[10:51:32.823] resource  "copper" published as index 60 (template 9, caption 1000003), vector now 61
-[10:51:32.824] resource  "furniture" cargo meshes: 0 of 1 (open) replaced
-[10:51:32.824] resource  WARN  "furniture" has no cargo geometry under media_soviet/resources - it will be drawn as its template. Add furniture.nmf and furniture.mtl, or drop it from [list]
-[10:51:32.824] vfs  fopen  media_soviet/resources/furniture.png
-[10:51:32.824] resource  "furniture" published as index 61 (template 42, caption 1000004), vector now 62
-[10:51:32.849] game.info  Loading string --- Initializing building types
-[10:51:33.583] game.ERROR ResourceGet - not found waste
-[10:51:33.587] game.ERROR ResourceGet - not found waste
-[10:51:33.590] game.ERROR ResourceGet - not found waste
-[10:51:33.593] game.ERROR ResourceGet - not found waste
-[10:51:33.876] game.ERROR ResourceGet - not found waste
-[10:51:34.142] game.ERROR ResourceGet - not found waste
-[10:51:34.154] game.ERROR ResourceGet - not found waste
-[10:51:34.373] game.ERROR ResourceGet - not found waste
-[10:51:34.380] game.ERROR ResourceGet - not found waste
-[10:51:34.736] game.ERROR ResourceGet - not found waste
-[10:51:34.816] game.ERROR ResourceGet - not found waste
-[10:51:35.874] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\2730167346\RBMK_Coolant_Pump\building.ini
-[10:51:36.240] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\3035907116\lignite\building.ini
-[10:51:36.240] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\3035907116\zellenkuehler\building.ini
-[10:51:36.241] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\3035907116\bhkw\building.ini
-[10:51:36.300] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\3033710102\textures\building.ini
-[10:51:36.329] game.ERROR ResourceGet - not found $STORAGE_SPECIAL
-[10:51:36.330] game.ERROR ResourceGet - not found $WORKING_VEHICLES_NEEDED
-[10:51:36.374] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\3013547359\textures\building.ini
-[10:51:36.522] game.ERROR ResourceGet - not found $POLLUTION_MEDIUM
-[10:51:36.699] game.ERROR ResourceGet - not found waste
-[10:51:36.808] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\2324838287\HOUSE\building.ini
-[10:51:36.996] game.ERROR ResourceGet - not found waste
-[10:51:36.997] game.ERROR ResourceGet - not found waste
-[10:51:37.194] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\2845627877\rennwerk\building.ini
-[10:51:37.194] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\2845627877\rennwerkmuseum\building.ini
-[10:51:37.252] game.ERROR ResourceGet - not found waste
-[10:51:37.316] game.ERROR ResourceGet - not found waste
-[10:51:37.686] game.ERROR ResourceGet - not found waste
-[10:51:37.688] game.ERROR ResourceGet - not found waste
-[10:51:37.691] game.ERROR ResourceGet - not found $STORAGE_EXPORT
-[10:51:37.692] game.ERROR ResourceGet - not found $RESOURCE_VISUALIZATION
-[10:51:37.701] game.ERROR ResourceGet - not found $PARTICLE
-[10:51:37.722] game.ERROR ResourceGet - not found waste
-[10:51:38.306] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\2908202819\textures\building.ini
-[10:51:40.398] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\2315089043\HOUSE5\building.ini
-[10:51:41.918] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\2656057679\HOUSE\building.ini
-[10:51:42.160] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\2608147662\mod\building.ini
-[10:51:42.420] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\2557590870\textures\building.ini
-[10:51:42.867] game.ERROR ResourceGet - not found 1
-[10:51:43.124] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\2349750492\HOUSE3\building.ini
-[10:51:43.126] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\2349750492\HOUSE5\building.ini
-[10:51:44.282] game.ERROR ResourceGet - not found 1
-[10:51:45.238] game.ERROR Failed to open media_soviet/workshop_wip/3512915555/textures/building.ini
-[10:51:45.238] game.ERROR Failed to open media_soviet/workshop_wip/3512915555/school/building.ini
-[10:51:45.321] needs    type list at 0x9E6A30: 000001AAEF7A7060 000001AAF1E41360 000001AAF2C93978
-[10:51:45.322] needs    probe  type  storage category -1 class 9  cap     0.05  slots 1  resolved donor@-1 mine@-1
-[10:51:45.323] needs    probe  type  storage category -1 class 9  cap     0.05  slots 1  resolved donor@-1 mine@-1
-[10:51:45.323] needs    probe  type  storage category -1 class 9  cap     0.05  slots 1  resolved donor@-1 mine@-1
-[10:51:45.323] needs    probe  type  storage category -1 class 9  cap     0.05  slots 1  resolved donor@-1 mine@-1
-[10:51:45.323] needs    probe  type  storage category -1 class 9  cap     0.05  slots 1  resolved donor@-1 mine@-1
-[10:51:45.324] needs    probe  type  storage category -1 class 9  cap     0.05  slots 1  resolved donor@-1 mine@-1
-[10:51:45.324] needs    probe  type  storage category -1 class 9  cap     0.05  slots 1  resolved donor@-1 mine@-1
-[10:51:45.324] needs    probe  type  storage category -1 class 9  cap     0.05  slots 1  resolved donor@-1 mine@-1
-[10:51:45.325] needs    probe  type  storage category -1 class 9  cap     0.05  slots 1  resolved donor@-1 mine@-1
-[10:51:45.325] needs    probe  type  storage category -1 class 9  cap     0.05  slots 1  resolved donor@-1 mine@-1
-[10:51:45.325] needs    probe  type  storage category -1 class 9  cap     0.05  slots 1  resolved donor@-1 mine@-1
-[10:51:45.325] needs    probe  type  storage category -1 class 9  cap     0.05  slots 1  resolved donor@-1 mine@-1
-[10:51:45.326] needs    probe  type  storage category -1 class 7  cap  1200.00  slots 1  resolved donor@-1 mine@-1
-[10:51:45.326] needs    probe  type  storage category -1 class 3  cap    60.00  slots 1  resolved donor@-1 mine@-1
-[10:51:45.326] needs    probe  type  storage category -1 class 14 cap   193.20  slots 1  resolved donor@-1 mine@-1
-[10:51:45.326] needs    probe  type  storage category -1 class 9  cap     0.05  slots 1  resolved donor@-1 mine@-1
-[10:51:45.326] needs    probe  type  storage category -1 class 7  cap  1200.00  slots 1  resolved donor@-1 mine@-1
-[10:51:45.326] needs    probe  type  storage category -1 class 3  cap    60.00  slots 1  resolved donor@-1 mine@-1
-[10:51:45.326] needs    probe  type  storage category -1 class 14 cap   193.20  slots 1  resolved donor@-1 mine@-1
-[10:51:45.326] needs    probe  type  storage category -1 class 9  cap     0.05  slots 1  resolved donor@-1 mine@-1
-[10:51:45.326] needs    probe  type  storage category -1 class 1  cap     1.00  slots 10  resolved donor@-1 mine@-1
-[10:51:45.326] needs    probe  type  storage category -1 class 0  cap     1.00  slots 12  resolved donor@9 mine@11
-[10:51:45.326] needs    probe  type  storage category -1 class 6  cap     1.00  slots 1  resolved donor@-1 mine@-1
-[10:51:45.326] needs    probe  type  storage category -1 class 4  cap     1.00  slots 2  resolved donor@-1 mine@-1
-[10:51:45.326] needs    probe  type  storage category -1 class 5  cap     1.00  slots 1  resolved donor@-1 mine@-1
-[10:51:45.326] needs    probe  type  storage category -1 class 3  cap    60.00  slots 1  resolved donor@-1 mine@-1
-[10:51:45.326] needs    probe  type  storage category -1 class 9  cap     0.05  slots 1  resolved donor@-1 mine@-1
-[10:51:45.326] needs    probe  type  storage category -1 class 1  cap     1.00  slots 10  resolved donor@-1 mine@-1
-[10:51:45.326] needs    probe  type  storage category -1 class 0  cap     1.00  slots 12  resolved donor@9 mine@11
-[10:51:45.326] needs    probe  type  storage category -1 class 6  cap     1.00  slots 1  resolved donor@-1 mine@-1
-[10:51:45.326] needs    probe  type  storage category -1 class 4  cap     1.00  slots 2  resolved donor@-1 mine@-1
-[10:51:45.326] needs    probe  type  storage category -1 class 5  cap     1.00  slots 1  resolved donor@-1 mine@-1
-[10:51:45.326] needs    probe  type  storage category -1 class 3  cap    60.00  slots 1  resolved donor@-1 mine@-1
-[10:51:45.326] needs    probe  type  storage category -1 class 9  cap     0.05  slots 1  resolved donor@-1 mine@-1
-[10:51:45.327] needs    probe  type  storage category -1 class 1  cap     1.00  slots 10  resolved donor@-1 mine@-1
-[10:51:45.327] needs    probe  type  storage category -1 class 0  cap     1.00  slots 12  resolved donor@9 mine@11
-[10:51:45.327] needs    probe  type  storage category -1 class 6  cap     1.00  slots 1  resolved donor@-1 mine@-1
-[10:51:45.327] needs    probe  type  storage category -1 class 4  cap     1.00  slots 2  resolved donor@-1 mine@-1
-[10:51:45.327] needs    probe  type  storage category -1 class 5  cap     1.00  slots 1  resolved donor@-1 mine@-1
-[10:51:45.327] needs    probe  type  storage category -1 class 3  cap    60.00  slots 1  resolved donor@-1 mine@-1
-[10:51:45.442] needs    "furniture" added to a type advanced storage that stocks "eletronics" (class 0, factor 0.350)
-[10:51:45.442] needs    probe    slot 0  eletronics         content     24.500  limit      0.000
-[10:51:45.442] needs    probe    slot 1  furniture          content     24.500  limit      0.000
-[10:51:45.442] needs    "furniture" added to a type advanced storage that stocks "eletronics" (class 0, factor 0.350)
-[10:51:45.442] needs    probe    slot 0  eletronics         content     24.500  limit      0.000
-[10:51:45.442] needs    probe    slot 1  furniture          content     24.500  limit      0.000
-[10:51:46.111] === CRASH: ACCESS_VIOLATION at 00007FFE67B51D86 ===
-[10:51:46.111]     A:\SteamLibrary\steamapps\common\SovietRepublic\tesmioloader\build\plugins\needs.dll + 0x1D86
-[10:51:46.111]     reading address 00000000C0900000
-[10:51:46.111]     rax=0000000000000000 rbx=0000000000000000 rcx=0C12000000195000 rdx=00000000C0900000
-[10:51:46.111]     rsi=000001AABEA100D0 rdi=0000000000000001 r8 =000001AAB6C70760 r9 =0000000000000000
-[10:51:46.111]     rsp=00000022A915B6B0 rbp=0000000000000000 rip=00007FFE67B51D86
-[10:51:46.111]     --- return addresses on the stack ---
-[10:51:46.111]       SOVIET64.exe + 0x9E6A30
-[10:51:46.111]       SOVIET64.exe + 0x9D4F10
-[10:51:46.111]       SOVIET64.exe + 0x0
-[10:51:46.111]       SOVIET64.exe + 0x9EACD0
-[10:51:46.111]       SOVIET64.exe + 0x896630
-[10:51:46.111]       SOVIET64.exe + 0x28ED59
-[10:51:46.111]       SOVIET64.exe + 0x896630
-[10:51:46.111]       SOVIET64.exe + 0x896630
-[10:51:46.111] === end crash report ===
-[10:51:46.112] FAULT    needs type storages: code C0000005 at 00007FFE67B51D86
-[10:51:46.112]          inside tesmioloader.dll (base 00007FFE6A6E0000)
-[10:51:46.112]          read from of 00000000C0900000
-[10:51:46.112] needs    type storages disabled after a fault - the preview stays empty until a building of that type exists
-[10:51:46.138] game.info  Loading string --- Initializing vehicle types
-[10:51:46.445] game.ERROR ResourceGet - not found cargovehicles
-[10:51:47.013] game.ERROR Failed to open media_soviet/cwc/vehicles/25d49/script.ini
-[10:51:47.014] game.ERROR Failed to open media_soviet/cwc/vehicles/32d43/script.ini
-[10:51:47.014] game.ERROR Failed to open media_soviet/cwc/vehicles/34d44/script.ini
-[10:51:47.018] game.ERROR Failed to open media_soviet/cwc/vehicles/bbo214/script.ini
-[10:51:47.018] game.ERROR Failed to open media_soviet/cwc/vehicles/bbotender/script.ini
-[10:51:47.018] game.ERROR Failed to open media_soviet/cwc/vehicles/br80/script.ini
-[10:51:47.018] game.ERROR Failed to open media_soviet/cwc/vehicles/br81/script.ini
-[10:51:47.042] game.ERROR Failed to open media_soviet/cwc/vehicles/Eseries/script.ini
-[10:51:47.042] game.ERROR Failed to open media_soviet/cwc/vehicles/Etender/script.ini
-[10:51:47.043] game.ERROR Failed to open media_soviet/cwc/vehicles/FDseries/script.ini
-[10:51:47.043] game.ERROR Failed to open media_soviet/cwc/vehicles/FDtender/script.ini
-[10:51:47.055] game.ERROR Failed to open media_soviet/cwc/vehicles/ISseries/script.ini
-[10:51:47.055] game.ERROR Failed to open media_soviet/cwc/vehicles/IStender/script.ini
-[10:51:47.060] game.ERROR Failed to open media_soviet/cwc/vehicles/ol49/script.ini
-[10:51:47.060] game.ERROR Failed to open media_soviet/cwc/vehicles/Olo1/script.ini
-[10:51:47.060] game.ERROR Failed to open media_soviet/cwc/vehicles/otuatender/script.ini
-[10:51:47.061] game.ERROR Failed to open media_soviet/cwc/vehicles/pm2/script.ini
-[10:51:47.061] game.ERROR Failed to open media_soviet/cwc/vehicles/pm3/script.ini
-[10:51:47.072] game.ERROR Failed to open media_soviet/cwc/vehicles/shared/script.ini
-[10:51:47.072] game.ERROR Failed to open media_soviet/cwc/vehicles/SoSeries/script.ini
-[10:51:47.072] game.ERROR Failed to open media_soviet/cwc/vehicles/SOtender/script.ini
-[10:51:47.072] game.ERROR Failed to open media_soviet/cwc/vehicles/SuSeries/script.ini
-[10:51:47.072] game.ERROR Failed to open media_soviet/cwc/vehicles/Sutender/script.ini
-[10:51:47.073] game.ERROR Failed to open media_soviet/cwc/vehicles/tkh491/script.ini
-[10:51:47.073] game.ERROR Failed to open media_soviet/cwc/vehicles/tkt48/script.ini
-[10:51:47.079] game.ERROR Failed to open media_soviet/cwc/vehicles/ty45/script.ini
-[10:51:47.081] game.ERROR Failed to open media_soviet/cwc/vehicles/WR360/script.ini
-[10:51:47.412] game.ERROR Failed to open media_soviet/dlc3/vehicles/MazTex/script.ini
-[10:51:47.732] game.ERROR Failed to open media_soviet/dlc3/vehicles/SaurerTex/script.ini
-[10:51:47.780] game.ERROR Failed to open media_soviet/dlc3/vehicles/textures/script.ini
-[10:51:47.780] game.ERROR Failed to open media_soviet/dlc3/vehicles/texturesH75/script.ini
-[10:51:47.780] game.ERROR Failed to open media_soviet/dlc3/vehicles/texturesRB2/script.ini
-[10:51:47.811] game.ERROR Failed to open media_soviet/dlc3/vehicles/wozki/script.ini
-[10:51:47.813] game.ERROR Failed to open media_soviet/dlc3/vehicles/YagTex/script.ini
-[10:51:48.645] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\2957347546\W115\script.ini
-[10:51:48.645] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\2957347546\W115P\script.ini
-[10:51:48.801] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\2782038889\PT76\script.ini
-[10:51:48.801] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\2782038889\T54\script.ini
-[10:51:48.802] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\2782038889\T62\script.ini
-[10:51:48.821] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\2872403723\Tram71-619\script.ini
-[10:51:49.989] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\2059633685\VL-8front2\script.ini
-[10:51:49.990] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\2059633685\VL-8back2\script.ini
-[10:51:50.128] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\2217573698\MTLBU\script.ini
-[10:51:50.438] game.ERROR Failed to open media_soviet/workshop_wip/3722084702/gaz24_taxi/script.ini
-[10:51:50.493] game.ERROR Assignment of trainbox pair failed 2548042372/BCi29Trackbuilder
-[10:51:50.493] game.ERROR Assignment of trainbox pair failed 2548042372/No704Trackbuilder
-[10:51:50.493] game.ERROR Assignment of trainbox pair failed 2548042372/No704TrackbuilderCrane
-[10:51:53.231] game.info  Loading string --- Initializing GUI models
-[10:51:53.616] game.info  Loading string --- Initializing Conveyors
-[10:51:53.802] game.info  Loading string --- Initializing Pipes
-[10:51:53.809] game.info  Loading string --- Initializing Water Pipes
-[10:51:53.825] game.info  Loading string --- Initializing Pipes
-[10:51:53.843] game.info  Loading string --- Initializing Eletrical wires
-[10:51:53.949] game.info  Loading string --- Initializing Roads
-[10:51:54.010] game.info  Loading string --- Initializing Roads secondary
-[10:51:54.041] game.info  Loading string --- Initializing Rails
-[10:51:54.103] game.info  Loading string --- Initializing Rail secondary
-[10:51:54.103] game.info  Loading string --- Initializing Runways
-[10:51:54.135] game.info  Loading string --- Initializing Pedestrian way
-[10:51:54.150] game.info  Loading string --- Initializing Factory connections
-[10:51:54.173] game.info  Loading string --- Initializing water connections
-[10:51:54.174] game.info  Loading string --- Initializing cableway connections
-[10:51:54.174] game.info  Loading string --- Initializing Heating
-[10:51:54.183] game.info  Loading string --- Initializing tools
-[10:51:56.095] game.info  Loading string --- Initializing GUI textures
-[10:51:56.132] vfs  fopen  media_soviet/resources/copper_ore.png
-[10:51:56.132] vfs  fopen  media_soviet/resources/copper_concentrate.png
-[10:51:56.133] vfs  fopen  media_soviet/resources/raw_copper.png
-[10:51:56.134] vfs  fopen  media_soviet/resources/copper.png
-[10:51:56.135] vfs  fopen  media_soviet/resources/furniture.png
-[10:52:00.247] game.WARN  m_WaterErosionTerainWaterSediment 0
-[10:52:00.248] game.WARN  m_WaterErosionTerainWaterSediment 0
-[10:52:00.248] game.WARN  m_WaterErosionOutflow 0
-[10:52:00.248] game.WARN  m_WaterErosionOutflow 0
-[10:52:00.248] game.WARN  m_WaterErosionOutflowDiagonal 0
-[10:52:00.249] game.WARN  m_WaterErosionOutflowDiagonal 0
-[10:52:00.249] game.WARN  m_WaterErosionTerainWaterSedimentRT 0
-[10:52:00.249] game.WARN  m_WaterErosionTerainWaterSedimentRT 0
-[10:52:00.249] game.WARN  m_WaterErosionOutflowRT 0
-[10:52:00.249] game.WARN  m_WaterErosionOutflowRT 0
-[10:52:00.249] game.WARN  m_WaterErosionOutflowDiagonalRT 0
-[10:52:00.249] game.WARN  m_WaterErosionOutflowDiagonalRT 0
-[10:52:00.249] game.WARN  m_WaterErosionFinalTerrain 0
-[10:52:00.249] game.WARN  m_WaterErosionFinalTerrainRT 0
-[10:52:00.250] game.WARN  m_WaterErosionNormalTest 0
-[10:52:00.250] game.WARN  m_WaterErosionNormalTestRT 0
-[10:52:00.874] game.info  Loading string --- Initializing Semaphores
-[10:52:01.094] game.info  Loading string --- Preparing ambients
-[10:52:01.094] game.info  Loading string --- Importing game files - creating arrays
-[10:52:01.095] game.ERROR Cannot open media_soviet/campaign1/events.bin for load EmergencyEvents
-[10:52:01.095] game.ERROR Cannot open media_soviet/campaign1/movies.bin for load Movies
-[10:52:01.096] game.info  Loading string --- Import - Roads secondary
-[10:52:01.100] game.info  Loading string --- Import - Rails
-[10:52:01.101] game.info  Loading string --- Import - Rails secondary
-[10:52:01.101] game.info  Loading string --- Import - Conveyors
-[10:52:01.102] game.info  Loading string --- Import - Pipes
-[10:52:01.102] game.info  Loading string --- Import - WaterPipes
-[10:52:01.102] game.info  Loading string --- Import - Fences
-[10:52:01.103] game.info  Loading string --- Import - Heating
-[10:52:01.103] game.info  Loading string --- Import - Factory Connections
-[10:52:01.103] game.info  Loading string --- Import - Pedestrian Ways
-[10:52:01.104] game.info  Loading string --- Import - Electric wires high tension
-[10:52:01.105] game.info  Loading string --- Import - Electric wires low tension
-[10:52:01.105] game.info  Loading string --- Import - Buoys
-[10:52:01.105] game.info  Loading string --- Import - Cableway
-[10:52:01.105] game.info  Loading string --- Import - Runways
-[10:52:01.134] game.info  Loading string --- Import - Air Pollution
-[10:52:01.136] game.ERROR Cannot open media_soviet/campaign1/pollution.bin for load Air Pollution
-[10:52:01.136] game.info  Loading string --- Import - Christmas lights
-[10:52:01.136] game.ERROR Cannot open media_soviet/campaign1/christmas.bin for load Christmas lights
-[10:52:01.136] game.info  Loading string --- Import - Notification Messages
-[10:52:01.136] game.ERROR Cannot open media_soviet/campaign1/messages.bin for load Notification Messages
-[10:52:01.137] game.info  Loading string --- Import - Scripts
-[10:52:01.137] game.ERROR Scripts not loaded - from version 122 or lower are obsolete 
-[10:52:01.137] game.info  Loading string --- Import - Custom names
-[10:52:01.137] game.info  Loading string --- Import - City names
-[10:52:01.137] game.info  Loading string --- Import - Research
-[10:52:01.137] game.ERROR Cannot open media_soviet/campaign1/research.bin for load Research
-[10:52:01.137] game.info  Loading string --- Import - Movies
-[10:52:01.137] game.ERROR Cannot open media_soviet/campaign1/movies.bin for load Movies
-[10:52:01.137] game.info  Loading string --- Import - Emergency events
-[10:52:01.137] game.ERROR Cannot open media_soviet/campaign1/events.bin for load EmergencyEvents
-[10:52:01.139] game.info  Loading string --- Import - Roads
-[10:52:01.157] game.info  Loading string --- Import - Roads secondary
-[10:52:01.220] game.info  Loading string --- Import - Rails
-[10:52:01.303] game.info  Loading string --- Import - Rails secondary
-[10:52:01.310] game.info  Loading string --- Import - Conveyors
-[10:52:01.311] game.info  Loading string --- Import - Pipes
-[10:52:01.312] game.info  Loading string --- Import - WaterPipes
-[10:52:01.312] game.info  Loading string --- Import - Fences
-[10:52:01.315] game.info  Loading string --- Import - Heating
-[10:52:01.316] game.info  Loading string --- Import - Factory Connections
-[10:52:01.316] game.info  Loading string --- Import - Pedestrian Ways
-[10:52:01.327] game.info  Loading string --- Import - Electric wires high tension
-[10:52:01.330] game.info  Loading string --- Import - Electric wires low tension
-[10:52:01.332] game.info  Loading string --- Import - Water
-[10:52:01.333] game.info  Loading string --- Import - Cableway
-[10:52:01.333] game.info  Loading string --- Import - Runways
-[10:52:01.333] game.info  Loading string --- Import - Semaphores
-[10:52:01.333] game.info  Loading string --- Import - Buildings game
-[10:52:01.352] game.info  Loading string --- Import - Road junctions
-[10:52:01.353] game.info  Loading string --- Import - Vehicles
-[10:52:01.353] game.info  Loading string --- Import - Lines
-[10:52:01.353] game.info  Loading string --- Import - Workers
-[10:52:01.458] game.ERROR Failed to open header for enumeration media_soviet/scenarios/clothesexport/script.ini
-[10:52:01.458] game.ERROR Failed to open header for enumeration media_soviet/scenarios/goods/script.ini
-[10:52:01.458] game.ERROR Failed to open header for enumeration media_soviet/scenarios/steelexport/script.ini
-[10:52:01.458] game.info  Loading string --- Import - Vehicle Replace tool
-[10:52:01.459] game.ERROR Read error (8) - File 'media_soviet/campaign1/replace_history.bin' 
-[10:52:01.461] game.ERROR Read error (6) - File 'media_soviet/campaign1/usedveh.bin' 
-[10:52:01.461] game.info  Loading string --- Import - CO tool
-[10:52:01.463] game.info  Loading string --- Import - Verifying Roads
-[10:52:01.463] game.info  Loading string --- Import - Verifying Footpaths
-[10:52:01.463] game.info  Loading string --- Import - Verifying Railways
-[10:52:01.463] game.info  Loading string --- Import - Verifying Buildings
-[10:52:01.464] game.info  Loading string --- Import - Verifying Buildings - Step 2
-[10:52:01.464] game.info  Loading string --- Import - Electric High wires verification
-[10:52:01.464] game.info  Loading string --- Import - Electric Low wires verification
-[10:52:01.464] game.info  Loading string --- Import - Pipelines verification
-[10:52:01.464] game.info  Loading string --- Import - WaterPipes verification
-[10:52:01.464] game.info  Loading string --- Import - Fences verification
-[10:52:01.464] game.info  Loading string --- Import - Heating verification
-[10:52:01.464] game.info  Loading string --- Import - Initializing chain semaphores
-[10:52:01.464] game.info  Loading string --- Import - Vehicles Validation
-[10:52:01.464] game.info  Loading string --- Import - Check vehicles
-[10:52:01.464] game.info  Loading string --- Import - Check buildings
-[10:52:01.464] game.info  Loading string --- Import - Check vehicles - conversion to new system
-[10:52:01.464] game.info  Loading string --- Import - Emergency events verification
-[10:52:01.464] game.info  Loading string --- Import - Fixing snowplows
-[10:52:01.464] game.info  Loading string --- Import - Reconnection lamp to electric sources
-[10:52:01.464] game.info  Loading string --- Import - Christmas lights electric sources
-[10:52:01.465] game.info  Loading string --- Import - Trolley  connection to electric sources
-[10:52:01.465] game.info  Loading string --- Import - Regenerating semaphore connections
-[10:52:01.465] game.info  Loading string --- Import - Personal cars heading fix
-[10:52:01.465] game.info  Loading string --- Import - Check buildings
-[10:52:01.465] game.info  Loading string --- Import - Workers emergency events verification
-[10:52:01.465] game.info  Loading string --- Import - Adding air custom houses
-[10:52:01.465] game.info  Loading string --- Import - Regenerating walking and parking connections 
- (increasing walking and personal cars distance)
-[10:52:01.466] game.info  Loading string --- Check for bad building railways
-[10:52:01.466] game.info  Loading string --- Import - Recalc heating or electric or water connection
-[10:52:01.466] game.info  Loading string --- Import - Workers walking to recalc
-[10:52:01.466] game.info  Loading string --- Import - Recalculating factory variable production/consumption
-[10:52:01.498] game.info  Loading string --- Import - Generating field positions
-[10:52:01.498] game.info  Loading string --- Import - Finished
-[10:52:01.499] game.info  Loading string --- Loading weathers
-[10:52:01.499] game.info  Loading string --- Creating dynamic Lines
-[10:52:01.500] game.info  Loading string --- Creating road junctions
-[10:52:01.500] game.info  Loading string --- Creating road sign zones
-[10:52:01.501] game.info  Loading string --- Game initialized
-[10:52:02.327] battery  dispatcher hook runs on thread 28668
-[10:52:02.327] battery  no accumulator found (types 18..., capacity >= 500)
-[10:52:02.327] battery  probe: 14 building(s)
-[10:52:02.327] battery  probe: type 31  built   cap    18.00  slots 1  amount     0.00  quality 0.000  out 0.000  W 0.000  V 0.000  breaker 18.000  dials 0.000/0.000
-[10:52:02.327] battery  probe: type 31  built   cap    18.00  slots 1  amount     0.00  quality 0.000  out 0.000  W 0.000  V 0.000  breaker 18.000  dials 0.000/0.000
-[10:52:02.327] battery  probe: type 31  built   cap    18.00  slots 1  amount     0.00  quality 0.000  out 0.000  W 0.000  V 0.000  breaker 18.000  dials 0.000/0.000
-[10:52:02.327] battery  probe: type 31  built   cap    18.00  slots 1  amount     0.00  quality 0.000  out 0.000  W 0.000  V 0.000  breaker 18.000  dials 0.000/0.000
-[10:52:02.327] battery  probe: type 31  built   cap    18.00  slots 1  amount     0.00  quality 0.000  out 0.000  W 0.000  V 0.000  breaker 18.000  dials 0.000/0.000
-[10:52:02.327] battery  probe: type 31  built   cap    18.00  slots 1  amount     0.00  quality 0.000  out 0.000  W 0.000  V 0.000  breaker 18.000  dials 0.000/0.000
-[10:52:02.327] battery  probe: 6 building(s) carry an eletric storage
-[10:52:30.223] needs    probe  goods bucket 0 at game+0x12720: 10 entr(ies)
-[10:52:30.223] needs    probe      [0] B6C717A0 000001AA 00000000 00000000      -0.0000     0.0000     0.0000     0.0000
-[10:52:30.223] needs    probe      [1] B6C71AE0 000001AA 00000000 00000000      -0.0000     0.0000     0.0000     0.0000
-[10:52:30.223] needs    probe  goods bucket 1 at game+0x12738: 10 entr(ies)
-[10:52:30.223] needs    probe      [0] B6C717A0 000001AA 00000000 00000000      -0.0000     0.0000     0.0000     0.0000
-[10:52:30.223] needs    probe      [1] B6C71AE0 000001AA 00000000 00000000      -0.0000     0.0000     0.0000     0.0000
-[10:52:30.223] needs    probe  goods bucket 2 at game+0x12750: 10 entr(ies)
-[10:52:30.223] needs    probe      [0] B6C717A0 000001AA 00000000 00000000      -0.0000     0.0000     0.0000     0.0000
-[10:52:30.223] needs    probe      [1] B6C71AE0 000001AA 00000000 00000000      -0.0000     0.0000     0.0000     0.0000
-[10:52:30.223] needs    probe  goods bucket 3 at game+0x12768: 10 entr(ies)
-[10:52:30.223] needs    probe      [0] B6C717A0 000001AA 00000000 00000000      -0.0000     0.0000     0.0000     0.0000
-[10:52:30.223] needs    probe      [1] B6C71AE0 000001AA 3E99999A 00000000      -0.0000     0.0000     0.3000     0.0000
-[10:52:30.223] needs    probe  goods bucket 4 at game+0x12780: 0 entr(ies)
-[10:52:30.223] needs    the "other goods" purchase bucket at game+0x12780 holds 0 of the 10 entries the others do - filling it, or the first citizen to buy a modded good faults at 0x198868
-[10:52:32.330] battery  no accumulator found (types 18..., capacity >= 500)
-[10:52:54.108] needs    citizen planner runs on thread 28668
-[10:52:54.108] needs    probe  person 000001AB43543A80: 0 demand(s), tourist flag 0
-[10:52:54.108] needs    probe    status  happy 0.87 food 0.65 health 0.81 soviet 0.70 alcohol 0.01 culture 0.39 sport 0.14 religion 0.36 clothes 0.37 electronics 0.28
-[10:52:54.108] needs    furniture          0 added (0 from the template), 0 replaced, 0 skipped (full), 1 without a donor, 48 storage slot(s), 0 unhappy citizen(s)
-[10:52:55.124] needs    probe  person 000001AB54CEDB70: 2 demand(s), tourist flag 0
-[10:52:55.124] needs    probe    [0] kind 1   food               0.00339 of 0.00339  target 1/1
-[10:52:55.124] needs    probe    [1] kind 3   -                  0.00150 of 0.00150  target 7/7
-[10:52:55.124] needs    probe    status  happy 0.79 food 0.61 health 0.89 soviet 0.65 alcohol 0.34 culture 0.32 sport 0.14 religion 0.25 clothes 0.42 electronics 0.49
-[10:52:56.760] needs    probe  person 000001AB54CE25F0: 2 demand(s), tourist flag 0
-[10:52:56.760] needs    probe    [0] kind 1   food               0.00220 of 0.00220  target 1/1
-[10:52:56.760] needs    probe    [1] kind 5   -                  10.00000 of 10.00000  target 7/7
-[10:52:56.760] needs    probe    status  happy 0.86 food 0.61 health 0.86 soviet 0.52 alcohol 0.32 culture 0.24 sport 0.39 religion 0.31 clothes 0.43 electronics 0.58
-[10:52:56.951] needs    probe  person 000001AB54E8DFB0: 3 demand(s), tourist flag 0
-[10:52:56.951] needs    probe    [0] kind 1   food               0.00150 of 0.00150  target 1/1
-[10:52:56.951] needs    probe    [1] kind 1   meat               0.00100 of 0.00100  target 1/1
-[10:52:56.951] needs    probe    [2] kind 1   clothes            0.00077 of 0.00077  target 8/14
-[10:52:56.951] needs    probe    status  happy 0.81 food 0.80 health 0.83 soviet 0.73 alcohol 0.43 culture 0.41 sport 0.40 religion 0.33 clothes 0.30 electronics 0.48
-[10:52:57.277] needs    probe  person 000001AB54CE7190: 2 demand(s), tourist flag 0
-[10:52:57.277] needs    probe    [0] kind 1   food               0.00220 of 0.00220  target 1/1
-[10:52:57.277] needs    probe    [1] kind 5   -                  10.00000 of 10.00000  target 7/7
-[10:52:57.277] needs    probe    status  happy 0.66 food 0.61 health 0.75 soviet 0.67 alcohol 0.40 culture 0.40 sport 0.12 religion 0.45 clothes 0.44 electronics 0.34
-[10:52:57.964] needs    probe  person 000001AB54CE8840: 4 demand(s), tourist flag 0
-[10:52:57.964] needs    probe    [0] kind 1   food               0.00150 of 0.00150  target 1/1
-[10:52:57.964] needs    probe    [1] kind 2   clothes            0.00077 of 0.00077  target 8/14
-[10:52:57.964] needs    probe    [2] kind 2   eletronics         0.00075 of 0.00075  target 9/14
-[10:52:57.964] needs    probe    [3] kind 5   -                  10.00000 of 10.00000  target 7/7
-[10:52:57.964] needs    probe    status  happy 0.84 food 0.68 health 0.72 soviet 0.58 alcohol 0.28 culture 0.40 sport 0.34 religion 0.26 clothes 0.37 electronics 0.50
-[10:52:57.964] needs    "furniture" captured a "eletronics" demand as its template - citizens can now want it on their own
-[10:53:02.327] battery  no accumulator found (types 18..., capacity >= 500)
-[10:53:02.327] battery  probe: 18 building(s)
-[10:53:02.327] battery  probe: type 31  built   cap    18.00  slots 1  amount     0.00  quality 0.000  out 0.000  W 0.000  V 0.000  breaker 18.000  dials 0.000/0.000
-[10:53:02.327] battery  probe: type 31  built   cap    18.00  slots 1  amount     0.00  quality 0.000  out 0.000  W 0.000  V 0.000  breaker 18.000  dials 0.000/0.000
-[10:53:02.327] battery  probe: type 31  built   cap    18.00  slots 1  amount     0.00  quality 0.000  out 0.000  W 0.000  V 0.000  breaker 18.000  dials 0.000/0.000
-[10:53:02.327] battery  probe: type 31  built   cap    18.00  slots 1  amount     0.00  quality 0.000  out 0.000  W 0.000  V 0.000  breaker 18.000  dials 0.000/0.000
-[10:53:02.327] battery  probe: type 31  built   cap    18.00  slots 1  amount     0.00  quality 0.000  out 0.000  W 0.000  V 0.000  breaker 18.000  dials 0.000/0.000
-[10:53:02.327] battery  probe: type 31  built   cap    18.00  slots 1  amount     0.00  quality 0.000  out 0.000  W 0.000  V 0.000  breaker 18.000  dials 0.000/0.000
-[10:53:02.327] battery  probe: type 2   built   cap     0.36  slots 1  amount     0.00  quality 0.000  out 0.000  W 0.000  V 0.000  breaker 0.360  dials 0.000/0.000
-[10:53:02.327] battery  probe: type 3   built   cap     0.05  slots 1  amount     0.00  quality 0.000  out 0.000  W 0.000  V 0.000  breaker 0.050  dials 0.000/0.000
-[10:53:02.327] battery  probe: type 3   built   cap     0.05  slots 1  amount     0.00  quality 0.000  out 0.000  W 0.000  V 0.000  breaker 0.050  dials 0.000/0.000
-[10:53:02.327] battery  probe: 9 building(s) carry an eletric storage
-[10:53:32.326] battery  no accumulator found (types 18..., capacity >= 500)
-[10:53:34.320] game.ERROR setfocus
-[10:53:54.605] needs    furniture          52 added (140 from the template), 0 replaced, 0 skipped (full), 145 without a donor, 48 storage slot(s), 0 unhappy citizen(s)
-[10:54:02.330] battery  no accumulator found (types 18..., capacity >= 500)
-[10:54:02.330] battery  probe: 18 building(s)
-[10:54:02.330] battery  probe: type 31  built   cap    18.00  slots 1  amount     0.00  quality 0.000  out 0.000  W 0.000  V 0.000  breaker 18.000  dials 0.000/0.000
-[10:54:02.330] battery  probe: type 31  built   cap    18.00  slots 1  amount     0.00  quality 0.000  out 0.000  W 0.000  V 0.000  breaker 18.000  dials 0.000/0.000
-[10:54:02.330] battery  probe: type 31  built   cap    18.00  slots 1  amount     0.00  quality 0.000  out 0.000  W 0.000  V 0.000  breaker 18.000  dials 0.000/0.000
-[10:54:02.330] battery  probe: type 31  built   cap    18.00  slots 1  amount     0.00  quality 0.000  out 0.000  W 0.000  V 0.000  breaker 18.000  dials 0.000/0.000
-[10:54:02.330] battery  probe: type 31  built   cap    18.00  slots 1  amount     0.00  quality 0.000  out 0.000  W 0.000  V 0.000  breaker 18.000  dials 0.000/0.000
-[10:54:02.330] battery  probe: type 31  built   cap    18.00  slots 1  amount     0.00  quality 0.000  out 0.000  W 0.000  V 0.000  breaker 18.000  dials 0.000/0.000
-[10:54:02.330] battery  probe: type 2   built   cap     0.36  slots 1  amount     0.00  quality 0.000  out 0.000  W 0.000  V 0.000  breaker 0.360  dials 0.000/0.000
-[10:54:02.330] battery  probe: type 3   built   cap     0.05  slots 1  amount     0.00  quality 0.000  out 0.000  W 0.000  V 0.000  breaker 0.050  dials 0.000/0.000
-[10:54:02.330] battery  probe: type 3   built   cap     0.05  slots 1  amount     0.00  quality 0.000  out 0.000  W 0.000  V 0.000  breaker 0.050  dials 0.000/0.000
-[10:54:02.330] battery  probe: type 23  built   cap     0.05  slots 1  amount     0.00  quality 0.000  out 0.000  W 0.000  V 0.000  breaker 0.050  dials 0.000/0.000
-[10:54:02.330] battery  probe: 10 building(s) carry an eletric storage
-[10:54:16.774] --- shutdown: 36 VFS redirects, 6 plugin(s) ---
+[01:33:27.351] tesmioloader phase B
+[01:33:27.351] exe base  00007FF7133A0000    engine base 00007FFC3ECC0000
+[01:33:27.351] vfs root  A:\SteamLibrary\steamapps\common\SovietRepublic\tesmioloader\build\vfs (on)
+[01:33:27.351] ---
+[01:33:27.351] hook ok      ReadFileIntoBuffer     orig=00007FFC3ED379B0
+[01:33:27.351] hook ok      CheckIfFileExist       orig=00007FFC3ED37B80
+[01:33:27.351] hook ok      C3DLog_PrintInfo       orig=00007FFC3ED5C700
+[01:33:27.351] hook ok      C3DLog_PrintWarning    orig=00007FFC3ED5C7F0
+[01:33:27.351] hook ok      C3DLog_PrintError      orig=00007FFC3ED5C8E0
+[01:33:27.351] hook ok      fopen                  orig=00007FFCF9BC55D0
+[01:33:27.351] hook ok      fopen_s                orig=00007FFCF9BC55F0
+[01:33:27.351] hook ok      _wfopen                orig=00007FFCF9BC5550
+[01:33:27.351] hook ok      _wfopen_s              orig=00007FFCF9BC5570
+[01:33:27.351] hook ok      fread                  orig=00007FFCF9B67ED0
+[01:33:27.351] hook ok      engine fopen           orig=00007FFCF9BC55D0
+[01:33:27.351] hook ok      engine fopen_s         orig=00007FFCF9BC55F0
+[01:33:27.351] hook ok      engine _wfopen         orig=00007FFCF9BC5550
+[01:33:27.351] hook ok      engine fread           orig=00007FFCF9B67ED0
+[01:33:27.351] hook ok      engine CreateFileA     orig=00007FFCFADC4E90
+[01:33:27.351] hook ok      engine CreateFile2     orig=00007FFCFADC4E80
+[01:33:27.351] hook ok      CreateFileW            orig=00007FFCFADC4EA0
+[01:33:27.351] texel  vtable hooked: Load2DFromFile=00007FFC3ECD79F0 GetTexel=00007FFC3ECD9080
+[01:33:27.351] menu     version line -> "v%d.%d.%d.%d (64 bit DX11.1 - GPU: %ls) | tsmloader b0.3"
+[01:33:27.352] plugin   accumulator      1.0      from accumulator.dll
+[01:33:27.353] plugin   depletion        1.1      from depletion.dll
+[01:33:27.354] deposits  "copper" type 10 "$TYPE_MINE_COPPER" -> resourcemap2 component 3, radius from the game, editor channel 4 (slot 5, column 5)
+[01:33:27.354] deposits  "sand" type 11 "$TYPE_MINE_SAND" -> terrain mask component 1, radius from the game, editor channel 2 (slot 6, column 0)
+[01:33:27.354] deposits  "clay" type 12 "$TYPE_MINE_CLAY" -> resourcemap3 component 0, radius from the game, editor channel 5 (slot 7, column 6)
+[01:33:27.354] deposits  "gas" type 13 "$TYPE_MINE_GAS" -> resourcemap3 component 1, radius from the game, editor channel 6 (slot 8, column 7)
+[01:33:27.354] deposits  1 map(s) past the engine's two: resourcemap3..resourcemap3
+[01:33:27.354] hook ok      CreateManagedTexture   orig=00007FFC3ED70190
+[01:33:27.354] hook ok      world map save         target=00007FF7133A7C20 tramp=00000293AFC40000 (13 bytes stolen)
+[01:33:27.354] maps     1 map(s) past the engine's two are loaded and saved with the world
+[01:33:27.354] patch  deposit type 10 added: "$TYPE_MINE_COPPER" in building.ini, resourcemap2 component 3
+[01:33:27.354] patch  deposit type 11 added: "$TYPE_MINE_SAND" in building.ini, terrain mask component 1
+[01:33:27.354] patch  deposit type 12 added: "$TYPE_MINE_CLAY" in building.ini, resourcemap3 component 0
+[01:33:27.354] patch  deposit type 13 added: "$TYPE_MINE_GAS" in building.ini, resourcemap3 component 1
+[01:33:27.354] patch  cave at 00007FF713380000, 4871 of 16384 bytes used (parser 00007FF713381000, dispatch 00007FF713381104, radius 00007FF713381243, mask 00007FF7133812A1/00007FF7133812D4)
+[01:33:27.354] hook ok      minimap overlay        target=00007FF71385DDE0 tramp=00000293AFC50000 (16 bytes stolen)
+[01:33:27.354] hook ok      minimap row            target=00007FF71385FEA0 tramp=00000293AFC60000 (15 bytes stolen)
+[01:33:27.354] minimap  4 mod layer(s) hooked
+[01:33:27.354] hook ok      editor panel           target=00007FF7135D3110 tramp=00000293AFC70000 (19 bytes stolen)
+[01:33:27.354] hook ok      editor dispatch        target=00007FF7136AD100 tramp=00000293AFC80000 (23 bytes stolen)
+[01:33:27.354] hook ok      editor cursor          target=00007FF713690E70 tramp=00000293AFE70000 (21 bytes stolen)
+[01:33:27.354] hook ok      editor texels          target=00007FF7135D8B00 tramp=00000293AFE80000 (21 bytes stolen)
+[01:33:27.354] hook ok      editor terrain overlay target=00007FF7133AAEE0 tramp=00000293AFE90000 (15 bytes stolen)
+[01:33:27.354] hook ok      C3D_TERRAIN::EditMask  orig=00007FFC3EDBB950
+[01:33:27.354] hook ok      editor rocks panel     target=00007FF7135CEE30 tramp=00000293AFEA0000 (20 bytes stolen)
+[01:33:27.354] editor   4 mod brush pair(s) hooked, 1 of them in the Rocks tab
+[01:33:27.354] plugin   service "deposits" v2 from deposits.dll
+[01:33:27.354] plugin   deposits         1.1      from deposits.dll
+[01:33:27.355] plugin   needs            1.0      from needs.dll
+[01:33:27.355] registry  "copper_ore" -> next free slot, template 18, text id 1000000
+[01:33:27.355] registry  "copper_concentrate" -> next free slot, template 19, text id 1000001
+[01:33:27.355] registry  "raw_copper" -> next free slot, template 8, text id 1000002
+[01:33:27.355] registry  "copper" -> next free slot, template 9, text id 1000003
+[01:33:27.355] registry  "furniture" -> next free slot, template 42, text id 1000004
+[01:33:27.355] registry  "gas" -> next free slot, template 13, text id 1000005
+[01:33:27.355] registry  "sand" -> next free slot, template 19, text id 1000006
+[01:33:27.355] registry  "clay" -> next free slot, template 19, text id 1000007
+[01:33:27.355] registry  "glass" -> next free slot, template 42, text id 1000008
+[01:33:27.355] hook ok      C3D_LANGUAGE::GetString orig=00007FFC3ED57F10
+[01:33:27.355] hook ok      ResourceGet            target=00007FF71364A7C0 tramp=00000293AFEB0000 (20 bytes stolen)
+[01:33:27.355] resource  hook mode=2 rva=0x2AA7C0, 9 name(s) declared, array grown to fit [list]
+[01:33:27.355] plugin   service "resources" v1 from resources.dll
+[01:33:27.355] plugin   resources        1.1      from resources.dll
+[01:33:27.356] plugin   walking          1.3      from walking.dll
+[01:33:27.356] hook ok      substation share       target=00007FF713559640 tramp=00000293AFEC0000 (23 bytes stolen)
+[01:33:27.356] hook ok      building dispatcher    target=00007FF7134D9A80 tramp=00000293B1680000 (19 bytes stolen)
+[01:33:27.356] hook ok      electric panel         target=00007FF713AA2610 tramp=00000293B1690000 (14 bytes stolen)
+[01:33:27.356] battery  charge 60/s, discharge 60/s, battery is a class-9 storage of at least 500 on a building of type 18 (or another listed)
+[01:33:27.356] hook ok      C3D_TERRAIN::Render    orig=00007FFC3EDB7560
+[01:33:27.356] hook ok      mine tick              target=00007FF713553690 tramp=00000293B16A0000 (15 bytes stolen)
+[01:33:27.356] hook ok      mine panel             target=00007FF713B26AC0 tramp=00000293B16B0000 (21 bytes stolen)
+[01:33:27.356] deplete  oil        type 0   resourcemap  component 0, 1200 t per saturated texel
+[01:33:27.356] deplete  iron       type 1   resourcemap  component 1, 1200 t per saturated texel
+[01:33:27.356] deplete  coal       type 2   resourcemap  component 2, 1200 t per saturated texel
+[01:33:27.356] deplete  uranium    type 6   resourcemap2 component 0, 1200 t per saturated texel
+[01:33:27.356] deplete  bauxite    type 7   resourcemap2 component 1, 1200 t per saturated texel
+[01:33:27.356] deplete  gravel     type 3   terrain mask component 2, 30000 t per saturated texel
+[01:33:27.356] deplete  copper     type 10  resourcemap2 component 3, 1200 t per saturated texel
+[01:33:27.356] deplete  sand       type 11  terrain mask component 1, 1200 t per saturated texel
+[01:33:27.356] deplete  clay       type 12  (null) component 0, 1200 t per saturated texel
+[01:33:27.356] deplete  gas        type 13  (null) component 1, 1200 t per saturated texel
+[01:33:27.356] deplete  10 deposit type(s) will run out, map written every 5 s
+[01:33:27.356] hook ok      citizen demand plan    target=00007FF713BD6960 tramp=00000293B16C0000 (20 bytes stolen)
+[01:33:27.356] hook ok      storage slot list      target=00007FF7134840F0 tramp=00000293B16D0000 (19 bytes stolen)
+[01:33:27.356] hook ok      shop tick              target=00007FF713511DA0 tramp=00000293B16E0000 (21 bytes stolen)
+[01:33:27.356] hook ok      building type loader   target=00007FF7134BD810 tramp=00000293B16F0000 (23 bytes stolen)
+[01:33:27.356] needs    furniture          like "eletronics" x1.00, advanced storages, chance 0.35, unhappiness 0.010
+[01:33:27.356] needs    1 need(s), demand on, storage on, at most 7 demand(s) per citizen (skip when full)
+[01:33:27.356] walking  walk build batch 480 -> 1000  (rva 0x12E2DD, immediate)
+[01:33:27.356] walking  walk build queued 480 -> 1000  (rva 0x12E7AF now reads 00007FF713370000)
+[01:33:27.356] walking  walk overlay     480 -> 1000  (rva 0x43F04A now reads 00007FF713370000)
+[01:33:27.356] walking  walk overlay 2   480 -> 1000  (rva 0x43F835 now reads 00007FF713370000)
+[01:33:27.356] walking  car build        2500 -> 2500  (rva 0x12F926 now reads 00007FF713370004)
+[01:33:27.356] walking  car overlay      2500 -> 2500  (rva 0x43FFB3 now reads 00007FF713370004)
+[01:33:27.356] walking  walk rebuild     530 -> 1000  (rva 0x12DEA7 now reads 00007FF713370008)
+[01:33:27.356] walking  car rebuild      2600 -> 2600  (rva 0x12F502 now reads 00007FF71337000C)
+[01:33:27.356] walking  regen on: every load rebuilds all walking and parking connections
+[01:33:27.356] plugin   6 loaded
+[01:33:27.356] --- hooks installed ---
+[01:33:27.471] game.WARN  1
+[01:33:27.471] game.WARN  2
+[01:33:27.471] game.WARN  3
+[01:33:27.471] game.WARN  4
+[01:33:27.471] game.WARN  5
+[01:33:27.472] game.WARN  6
+[01:33:27.472] game.WARN  6
+[01:33:27.472] game.WARN  7
+[01:33:27.476] game.WARN  Monitor 0
+[01:33:27.476] game.WARN  Position 0 0
+[01:33:27.476] game.WARN  Size 1920 1080
+[01:33:27.477] game.WARN  8
+[01:33:27.496] game.ERROR setfocus
+[01:33:27.701] game.ERROR currentlanguage russian
+[01:33:29.386] game.ERROR Failed to open header for enumeration media_soviet/saved_last/header.bin
+[01:33:43.683] game.WARN  Workshop subscribed items num 2501
+[01:33:48.832] game.WARN  Workshop subscribed items num 2501
+[01:33:49.843] game.ERROR Cannot open A:\SteamLibrary\steamapps\workshop\content\784150\2267431874\headerE.bin editor header
+[01:33:49.845] game.ERROR Cannot open media_soviet/workshop_wip/2123044941/headerE.bin editor header
+[01:33:49.845] game.ERROR Cannot open media_soviet/workshop_wip/2227015925/headerE.bin editor header
+[01:33:49.846] game.ERROR Cannot open media_soviet/workshop_wip/2328603677/headerE.bin editor header
+[01:33:49.846] game.ERROR Cannot open media_soviet/workshop_wip/2363667274/headerE.bin editor header
+[01:33:49.847] game.WARN  found save editor-autosave4
+[01:33:59.547] game.info  v1.1.1.7 (64 bit DX11.1)
+[01:34:00.453] game.info  Loading string --- Initializing workshop items
+[01:34:00.482] game.WARN  Workshop subscribed items num 2501
+[01:34:02.238] game.info  Loading string --- Loading weather
+[01:34:02.244] game.info  Loading string --- Loading sky
+[01:34:02.246] game.info  Loading string --- Loading underground
+[01:34:02.249] game.info  Loading string --- Initializing post effect
+[01:34:02.255] game.info  Loading string --- Initializing water
+[01:34:02.268] game.info  Loading string --- Loading terrain
+[01:34:02.490] game.info  Loading string --- Initializing clouds
+[01:34:02.491] game.info  Loading string --- Initializing particle effects
+[01:34:02.518] game.info  Loading string --- Loading paths
+[01:34:02.520] game.info  Loading string --- Initializing grass
+[01:34:02.521] game.info  Loading string --- Initializing trees
+[01:34:02.526] game.info  Loading string --- Importing trees
+[01:34:02.698] game.info  Loading string --- Initializing buildings
+[01:34:02.710] game.info  Loading string --- Importing buildings
+[01:34:03.077] game.info  Loading string --- Initializing Ambients
+[01:34:03.199] game.info  Loading string --- Initializing shadow system
+[01:34:03.200] game.info  Loading string --- Initializing far map
+[01:34:03.200] game.info  Loading string --- Initializing emissive map
+[01:34:03.201] game.info  Loading string --- Initializing resource map
+[01:34:03.201] vfs  fopen  media_soviet/tesmio/resourcemap_blank.dds
+[01:34:03.203] texel  deposit map texture 0 = 00000294751EC750 (tesmio/resourcemap_blank.dds)
+[01:34:03.203] maps     resourcemap3 = 00000294751EC750 (blank)
+[01:34:03.206] texel  deposit map texture 1 = 00000294751EA4D0 (campaign1/resourcemap.dds)
+[01:34:03.206] vfs  fopen  media_soviet/campaign1/resourcemap2.dds
+[01:34:03.206] vfs  fopen  media_soviet/campaign1/resourcemap2.dds
+[01:34:03.209] texel  deposit map texture 2 = 00000294751ECA50 (campaign1/resourcemap2.dds)
+[01:34:03.210] game.info  Loading string --- Initializing clouds shadow map
+[01:34:03.236] game.info  Loading string --- Import - Loading header
+[01:34:03.236] game.info  Opening headerE
+[01:34:03.249] game.info  Loading string --- Initializing shaders
+[01:34:03.262] game.info  Loading string --- Initializing screen marks
+[01:34:03.285] game.info  Loading string --- Initializing preview shot system
+[01:34:03.286] game.info  Loading string --- Initializing mud remove
+[01:34:03.286] game.info  Loading string --- Initializing main tabs
+[01:34:03.286] game.info  Loading string --- Initializing resources
+[01:34:03.309] resource  array now at 00000294AEEF00A0
+[01:34:03.309] resource  name field at +0x0, 57 live records, room for 63
+[01:34:03.310] resource  array moved 00000294AEEF00A0 -> 00000294AEF54800, capacity 66 records (57 live)
+[01:34:03.310] vfs  fopen  media_soviet/resources/copper_ore_vehicle.nmf
+[01:34:03.310] vfs  fopen  media_soviet/resources/copper_ore_vehicle.nmf
+[01:34:03.310] vfs  fopen  media_soviet/resources/copper_ore1.nmf
+[01:34:03.310] vfs  fopen  media_soviet/resources/copper_ore1.nmf
+[01:34:03.310] vfs  fopen  media_soviet/resources/copper_ore2.nmf
+[01:34:03.310] vfs  fopen  media_soviet/resources/copper_ore2.nmf
+[01:34:03.310] vfs  fopen  media_soviet/resources/copper_ore3.nmf
+[01:34:03.311] vfs  fopen  media_soviet/resources/copper_ore3.nmf
+[01:34:03.311] vfs  fopen  media_soviet/resources/copper_ore4.nmf
+[01:34:03.311] vfs  fopen  media_soviet/resources/copper_ore4.nmf
+[01:34:03.311] resource  "copper_ore" cargo meshes: 0 of 5 (bulk) replaced
+[01:34:03.311] resource  WARN  "copper_ore" has no cargo geometry under media_soviet/resources - it will be drawn as its template. Add copper_ore.nmf and copper_ore.mtl, or drop it from [list]
+[01:34:03.311] vfs  fopen  media_soviet/resources/copper_ore.png
+[01:34:03.311] resource  "copper_ore" published as index 57 (template 18, caption 1000000), vector now 58
+[01:34:03.311] vfs  fopen  media_soviet/resources/copper_concentrate_vehicle.nmf
+[01:34:03.311] vfs  fopen  media_soviet/resources/copper_concentrate_vehicle.nmf
+[01:34:03.311] vfs  fopen  media_soviet/resources/copper_concentrate1.nmf
+[01:34:03.311] vfs  fopen  media_soviet/resources/copper_concentrate1.nmf
+[01:34:03.311] vfs  fopen  media_soviet/resources/copper_concentrate2.nmf
+[01:34:03.312] vfs  fopen  media_soviet/resources/copper_concentrate2.nmf
+[01:34:03.312] vfs  fopen  media_soviet/resources/copper_concentrate3.nmf
+[01:34:03.312] vfs  fopen  media_soviet/resources/copper_concentrate3.nmf
+[01:34:03.312] vfs  fopen  media_soviet/resources/copper_concentrate4.nmf
+[01:34:03.312] vfs  fopen  media_soviet/resources/copper_concentrate4.nmf
+[01:34:03.312] resource  "copper_concentrate" cargo meshes: 0 of 5 (bulk) replaced
+[01:34:03.312] resource  WARN  "copper_concentrate" has no cargo geometry under media_soviet/resources - it will be drawn as its template. Add copper_concentrate.nmf and copper_concentrate.mtl, or drop it from [list]
+[01:34:03.312] vfs  fopen  media_soviet/resources/copper_concentrate.png
+[01:34:03.312] resource  "copper_concentrate" published as index 58 (template 19, caption 1000001), vector now 59
+[01:34:03.312] vfs  fopen  media_soviet/resources/raw_copper.nmf
+[01:34:03.312] vfs  fopen  media_soviet/resources/raw_copper.nmf
+[01:34:03.313] resource  "raw_copper" cargo meshes: 0 of 1 (open) replaced
+[01:34:03.313] resource  WARN  "raw_copper" has no cargo geometry under media_soviet/resources - it will be drawn as its template. Add raw_copper.nmf and raw_copper.mtl, or drop it from [list]
+[01:34:03.313] vfs  fopen  media_soviet/resources/raw_copper.png
+[01:34:03.313] resource  "raw_copper" published as index 59 (template 8, caption 1000002), vector now 60
+[01:34:03.313] vfs  fopen  media_soviet/resources/copper.nmf
+[01:34:03.313] vfs  fopen  media_soviet/resources/copper.nmf
+[01:34:03.314] resource  "copper" cargo meshes: 0 of 1 (open) replaced
+[01:34:03.314] resource  WARN  "copper" has no cargo geometry under media_soviet/resources - it will be drawn as its template. Add copper.nmf and copper.mtl, or drop it from [list]
+[01:34:03.314] vfs  fopen  media_soviet/resources/copper.png
+[01:34:03.314] resource  "copper" published as index 60 (template 9, caption 1000003), vector now 61
+[01:34:03.314] resource  "furniture" cargo meshes: 0 of 1 (open) replaced
+[01:34:03.314] resource  WARN  "furniture" has no cargo geometry under media_soviet/resources - it will be drawn as its template. Add furniture.nmf and furniture.mtl, or drop it from [list]
+[01:34:03.314] vfs  fopen  media_soviet/resources/furniture.png
+[01:34:03.314] resource  "furniture" published as index 61 (template 42, caption 1000004), vector now 62
+[01:34:03.314] resource  "gas" has no cargo geometry, like its template - media_soviet/resources/gas.png is the only asset it needs
+[01:34:03.314] vfs  fopen  media_soviet/resources/gas.png
+[01:34:03.314] resource  "gas" published as index 62 (template 13, caption 1000005), vector now 63
+[01:34:03.314] resource  "sand" cargo meshes: 0 of 5 (bulk) replaced
+[01:34:03.314] resource  WARN  "sand" has no cargo geometry under media_soviet/resources - it will be drawn as its template. Add sand.nmf and sand.mtl, or drop it from [list]
+[01:34:03.314] vfs  fopen  media_soviet/resources/sand.png
+[01:34:03.315] resource  "sand" published as index 63 (template 19, caption 1000006), vector now 64
+[01:34:03.315] resource  "clay" cargo meshes: 0 of 5 (bulk) replaced
+[01:34:03.315] resource  WARN  "clay" has no cargo geometry under media_soviet/resources - it will be drawn as its template. Add clay.nmf and clay.mtl, or drop it from [list]
+[01:34:03.315] vfs  fopen  media_soviet/resources/clay.png
+[01:34:03.315] resource  "clay" published as index 64 (template 19, caption 1000007), vector now 65
+[01:34:03.315] resource  "glass" cargo meshes: 0 of 1 (open) replaced
+[01:34:03.315] resource  WARN  "glass" has no cargo geometry under media_soviet/resources - it will be drawn as its template. Add glass.nmf and glass.mtl, or drop it from [list]
+[01:34:03.315] vfs  fopen  media_soviet/resources/glass.png
+[01:34:03.315] resource  "glass" published as index 65 (template 42, caption 1000008), vector now 66
+[01:34:03.324] game.info  Loading string --- Initializing building types
+[01:34:03.608] game.ERROR ResourceGet - not found waste
+[01:34:03.610] game.ERROR ResourceGet - not found waste
+[01:34:03.612] game.ERROR ResourceGet - not found waste
+[01:34:03.614] game.ERROR ResourceGet - not found waste
+[01:34:03.751] game.ERROR ResourceGet - not found waste
+[01:34:03.885] game.ERROR ResourceGet - not found waste
+[01:34:03.891] game.ERROR ResourceGet - not found waste
+[01:34:04.008] game.ERROR ResourceGet - not found waste
+[01:34:04.012] game.ERROR ResourceGet - not found waste
+[01:34:04.216] game.ERROR ResourceGet - not found waste
+[01:34:04.262] game.ERROR ResourceGet - not found waste
+[01:34:04.772] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\2730167346\RBMK_Coolant_Pump\building.ini
+[01:34:04.934] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\3035907116\lignite\building.ini
+[01:34:04.935] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\3035907116\zellenkuehler\building.ini
+[01:34:04.935] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\3035907116\bhkw\building.ini
+[01:34:04.967] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\3033710102\textures\building.ini
+[01:34:04.983] game.ERROR ResourceGet - not found $STORAGE_SPECIAL
+[01:34:04.984] game.ERROR ResourceGet - not found $WORKING_VEHICLES_NEEDED
+[01:34:05.006] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\3013547359\textures\building.ini
+[01:34:05.088] game.ERROR ResourceGet - not found $POLLUTION_MEDIUM
+[01:34:05.153] game.ERROR ResourceGet - not found waste
+[01:34:05.211] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\2324838287\HOUSE\building.ini
+[01:34:05.315] game.ERROR ResourceGet - not found waste
+[01:34:05.316] game.ERROR ResourceGet - not found waste
+[01:34:05.395] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\2845627877\rennwerk\building.ini
+[01:34:05.395] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\2845627877\rennwerkmuseum\building.ini
+[01:34:05.426] game.ERROR ResourceGet - not found waste
+[01:34:05.465] game.ERROR ResourceGet - not found waste
+[01:34:05.602] game.ERROR ResourceGet - not found waste
+[01:34:05.604] game.ERROR ResourceGet - not found waste
+[01:34:05.605] game.ERROR ResourceGet - not found $STORAGE_EXPORT
+[01:34:05.606] game.ERROR ResourceGet - not found $RESOURCE_VISUALIZATION
+[01:34:05.612] game.ERROR ResourceGet - not found $PARTICLE
+[01:34:05.627] game.ERROR ResourceGet - not found waste
+[01:34:05.914] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\2908202819\textures\building.ini
+[01:34:07.597] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\2315089043\HOUSE5\building.ini
+[01:34:08.353] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\2656057679\HOUSE\building.ini
+[01:34:08.494] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\2608147662\mod\building.ini
+[01:34:08.686] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\2557590870\textures\building.ini
+[01:34:08.925] game.ERROR ResourceGet - not found 1
+[01:34:09.076] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\2349750492\HOUSE3\building.ini
+[01:34:09.077] game.ERROR Failed to open A:\SteamLibrary\steamapps\workshop\content\784150\2349750492\HOUSE5\building.ini
+[01:34:09.760] game.ERROR ResourceGet - not found 1
+[01:34:10.335] game.ERROR Failed to open media_soviet/workshop_wip/3512915555/textures/building.ini
+[01:34:10.335] game.ERROR Failed to open media_soviet/workshop_wip/3512915555/school/building.ini
+[01:34:10.388] needs    type list at 0x9E6A30: 00000294E935F060 00000294EB9FAB30 00000294EC84B978
+[01:34:10.388] needs    probe  type  storage category -1 class 9  cap     0.05  slots 1  resolved donor@-1 mine@-1
+[01:34:10.389] needs    probe  type  storage category -1 class 9  cap     0.05  slots 1  resolved donor@-1 mine@-1
+[01:34:10.389] needs    probe  type  storage category -1 class 9  cap     0.05  slots 1  resolved donor@-1 mine@-1
+[01:34:10.390] needs    probe  type  storage category -1 class 9  cap     0.05  slots 1  resolved donor@-1 mine@-1
+[01:34:10.390] needs    probe  type  storage category -1 class 9  cap     0.05  slots 1  resolved donor@-1 mine@-1
+[01:34:10.390] needs    probe  type  storage category -1 class 9  cap     0.05  slots 1  resolved donor@-1 mine@-1
+[01:34:10.390] needs    probe  type  storage category -1 class 9  cap     0.05  slots 1  resolved donor@-1 mine@-1
+[01:34:10.391] needs    probe  type  storage category -1 class 9  cap     0.05  slots 1  resolved donor@-1 mine@-1
+[01:34:10.391] needs    probe  type  storage category -1 class 9  cap     0.05  slots 1  resolved donor@-1 mine@-1
+[01:34:10.391] needs    probe  type  storage category -1 class 9  cap     0.05  slots 1  resolved donor@-1 mine@-1
+[01:34:10.392] needs    probe  type  storage category -1 class 9  cap     0.05  slots 1  resolved donor@-1 mine@-1
+[01:34:10.392] needs    probe  type  storage category -1 class 9  cap     0.05  slots 1  resolved donor@-1 mine@-1
+[01:34:10.393] needs    probe  type  storage category -1 class 7  cap  1200.00  slots 1  resolved donor@-1 mine@-1
+[01:34:10.393] needs    probe  type  storage category -1 class 3  cap    60.00  slots 1  resolved donor@-1 mine@-1
+[01:34:10.393] needs    probe  type  storage category -1 class 14 cap   193.20  slots 1  resolved donor@-1 mine@-1
+[01:34:10.393] needs    probe  type  storage category -1 class 9  cap     0.05  slots 1  resolved donor@-1 mine@-1
+[01:34:10.393] needs    probe  type  storage category -1 class 7  cap  1200.00  slots 1  resolved donor@-1 mine@-1
+[01:34:10.393] needs    probe  type  storage category -1 class 3  cap    60.00  slots 1  resolved donor@-1 mine@-1
+[01:34:10.393] needs    probe  type  storage category -1 class 14 cap   193.20  slots 1  resolved donor@-1 mine@-1
+[01:34:10.393] needs    probe  type  storage category -1 class 9  cap     0.05  slots 1  resolved donor@-1 mine@-1
+[01:34:10.393] needs    probe  type  storage category -1 class 1  cap     1.00  slots 10  resolved donor@-1 mine@-1
+[01:34:10.393] needs    probe  type  storage category -1 class 0  cap     1.00  slots 13  resolved donor@9 mine@11
+[01:34:10.393] needs    probe  type  storage category -1 class 6  cap     1.00  slots 1  resolved donor@-1 mine@-1
+[01:34:10.393] needs    probe  type  storage category -1 class 4  cap     1.00  slots 2  resolved donor@-1 mine@-1
+[01:34:10.393] needs    probe  type  storage category -1 class 5  cap     1.00  slots 1  resolved donor@-1 mine@-1
+[01:34:10.393] needs    probe  type  storage category -1 class 3  cap    60.00  slots 1  resolved donor@-1 mine@-1
+[01:34:10.393] needs    probe  type  storage category -1 class 9  cap     0.05  slots 1  resolved donor@-1 mine@-1
+[01:34:10.393] needs    probe  type  storage category -1 class 1  cap     1.00  slots 10  resolved donor@-1 mine@-1
+[01:34:10.393] needs    probe  type  storage category -1 class 0  cap     1.00  slots 13  resolved donor@9 mine@11
+[01:34:10.393] needs    probe  type  storage category -1 class 6  cap     1.00  slots 1  resolved donor@-1 mine@-1
+[01:34:10.393] needs    probe  type  storage category -1 class 4  cap     1.00  slots 2  resolved donor@-1 mine@-1
+[01:34:10.393] needs    probe  type  storage category -1 class 5  cap     1.00  slots 1  resolved donor@-1 mine@-1
+[01:34:10.393] needs    probe  type  storage category -1 class 3  cap    60.00  slots 1  resolved donor@-1 mine@-1
+[01:34:10.393] needs    probe  type  storage category -1 class 9  cap     0.05  slots 1  resolved donor@-1 mine@-1
+[01:34:10.394] needs    probe  type  storage category -1 class 1  cap     1.00  slots 10  resolved donor@-1 mine@-1
+[01:34:10.394] needs    probe  type  storage category -1 class 0  cap     1.00  slots 13  resolved donor@9 mine@11
+[01:34:10.394] needs    probe  type  storage category -1 class 6  cap     1.00  slots 1  resolved donor@-1 mine@-1
+[01:34:10.394] needs    probe  type  storage category -1 class 4  cap     1.00  slots 2  resolved donor@-1 mine@-1
+[01:34:10.394] needs    probe  type  storage category -1 class 5  cap     1.00  slots 1  resolved donor@-1 mine@-1
+[01:34:10.394] needs    probe  type  storage category -1 class 3  cap    60.00  slots 1  resolved donor@-1 mine@-1
+[01:34:10.479] needs    "furniture" added to a type advanced storage that stocks "eletronics" (class 0, factor 0.350)
+[01:34:10.479] needs    probe    slot 0  eletronics         content     24.500  limit      0.000
+[01:34:10.479] needs    probe    slot 1  furniture          content     24.500  limit      0.000
+[01:34:10.479] needs    "furniture" added to a type advanced storage that stocks "eletronics" (class 0, factor 0.350)
+[01:34:10.479] needs    probe    slot 0  eletronics         content     24.500  limit      0.000
+[01:34:10.479] needs    probe    slot 1  furniture          content     24.500  limit      0.000
+[01:34:10.957] === CRASH: ACCESS_VIOLATION at 00007FFC93201D86 ===
+[01:34:10.957]     A:\SteamLibrary\steamapps\common\SovietRepublic\tesmioloader\build\plugins\needs.dll + 0x1D86
+[01:34:10.957]     reading address 00000000C0900000
+[01:34:10.957]     rax=0000000000000000 rbx=0000000000000000 rcx=0C12000000195000 rdx=00000000C0900000
+[01:34:10.957]     rsi=00000294B6196F90 rdi=0000000000000001 r8 =00000294AEF5D080 r9 =0000000000000000
+[01:34:10.957]     rsp=000000A4EB4FB460 rbp=0000000000000000 rip=00007FFC93201D86
+[01:34:10.957]     --- return addresses on the stack ---
+[01:34:10.957]       SOVIET64.exe + 0x9E6A30
+[01:34:10.957]       SOVIET64.exe + 0x9D4F10
+[01:34:10.957]       SOVIET64.exe + 0x0
+[01:34:10.957]       SOVIET64.exe + 0x9EACD0
+[01:34:10.957]       SOVIET64.exe + 0x896630
+[01:34:10.957]       SOVIET64.exe + 0x28ED59
+[01:34:10.957]       SOVIET64.exe + 0x896630
+[01:34:10.957]       SOVIET64.exe + 0x896630
+[01:34:10.957]       SOVIET64.exe + 0x8D6290
+[01:34:10.957]       SOVIET64.exe + 0x8D6290
+[01:34:10.957]       SOVIET64.exe + 0x9EACD0
+[01:34:10.957] === end crash report ===

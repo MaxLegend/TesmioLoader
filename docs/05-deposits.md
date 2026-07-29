@@ -39,10 +39,14 @@ the texel reads either. Ghidra settled it.
 
 ## Which channels are free
 
-Eight channels exist and the base game reaches six. Measured over **every**
-shipped map — `campaign1`, `campaign2`, `terrain3`–`terrain6`, `terrain_svk`,
-`terrainblank` and all eighteen `tutorial_map*` folders — by counting non-zero
-bytes per channel:
+Eight channels exist **in the maps the game ships**, and it reaches six of them.
+Past that the plugin makes its own — see
+[Maps past the engine's two](#maps-past-the-engines-two) — so what follows is
+about the two that already exist, not about a ceiling.
+
+Measured over **every** shipped map — `campaign1`, `campaign2`,
+`terrain3`–`terrain6`, `terrain_svk`, `terrainblank` and all eighteen
+`tutorial_map*` folders — by counting non-zero bytes per channel:
 
 | Map | Component | Deposit | State |
 |---|---|---|---|
@@ -68,12 +72,169 @@ ship a replacement map through the VFS.
 `terrain6` and the tutorials, and none on `campaign1`, `campaign2` or
 `terrain_svk`. Whatever it is, it is not spare.
 
-Past those two there is nothing left, and a third map would have to be created
-and saved by the loader itself.
-
 The measurement is a dozen lines of Python over the DDS payload — 128-byte
 header, then `payload[c::4]` is component `c` of every pixel. Re-run it after
 any game update before assuming a channel is still free.
+
+## Maps past the engine's two
+
+**Eight channels was never a property of the deposit system.** It is two
+textures times four components, and the only thing that made two textures a
+limit is that the world loader creates exactly two. Everything downstream is
+already generic over which texture it is handed:
+
+| | |
+|---|---|
+| the sampler, rva `0x8360` | takes the texture as its fourth argument |
+| the texel writer, rva `0x238B00` | reads one out of the game object |
+| the overlay shader | samples whatever is bound to stage 0 |
+
+So `map = resourcemap3` in a section, or `map = auto`, and the plugin does for a
+third map exactly what the world loader does for the first two.
+
+### Loading
+
+An **import swap on `CreateManagedTexture`**, not a code patch. The loader hands
+it `"<folder>/resourcemap.dds"`, and that one path is both the signal that a
+world is loading and the name of the folder it is loading from —
+`resourcemap2`'s is not, because a terrain without one falls back to the bare
+`resourcemap2default.dds` and the folder is gone. Seeing it, the plugin repeats
+the loader's own three calls per extra map:
+
+```
+CreateManagedTexture(middlepoint, "<folder>/resourcemap3.dds")   // 0x7B1A
+tex->vtbl[2] (tex, path, 0, 0, 0, 0)      Load2DFromFile         // 0x7B4E
+tex->vtbl[19](tex)                        InitTempResource       // 0x7B5C
+```
+
+The hook re-enters itself — `LoadExtraMaps` calls straight back into
+`CreateManagedTexture` — so a flag guards the recursion, and that flag is the
+whole of the control.
+
+**A terrain with no `resourcemapN.dds` gets a blank**, written once into
+`vfs/media_soviet/tesmio/resourcemap_blank.dds`: 1024×1024, the same 128-byte
+header `resourcemap2default.dds` carries, payload zeroed. It cannot *be*
+`resourcemap2default.dds`, for two reasons — that file is not blank (components
+0, 1 and 2 hold a stock uranium and bauxite layout; only its alpha is clear),
+and `CreateManagedTexture` caches by path, so two maps loading one file would be
+one texture. Each map is therefore **created under its own name and loaded from
+whichever file exists**, which is why one blank can back any number of them.
+
+### Saving
+
+An additive inline hook on `0x7C20`, the function that writes `farmap`,
+`emissivemap` and both deposit maps. It takes the folder in `rdx`, so an extra
+map is one more `SaveToDDS` with the same argument. Painting and depletion
+survive a reload for the same reason the vanilla channels do.
+
+### Sampling
+
+The dispatch chain gets one substituted instruction. A vanilla map is
+
+```asm
+mov r9,[gameobj]
+mov r9,[r9+0xF08]
+```
+
+and an extra one is
+
+```asm
+mov r9,[rip+slot]        ; a qword in the cave's own data
+```
+
+— one indirection shorter. The slot lives in the **cave**, not in the plugin's
+globals, because the cave is guaranteed within `rel32` of the code reading it
+while a DLL's data is wherever Windows put the module. `LoadExtraMaps` writes it
+at every world load, and clears it when one starts.
+
+### Painting
+
+The texel writer decodes bit 2 of its channel index into one of exactly two
+pointers in the game object, so an extra map cannot be named by an index. The
+brush hook therefore **puts the deposit's texture in `resourcemap2`'s slot for
+the length of the call** and takes it straight back out. Reimplementing the
+writer instead would mean reimplementing its bracket, its bilinear footprint and
+its clamping for the sake of one pointer — and the same reasoning already
+decided not to reimplement `0x2350D0`.
+
+### What `auto` does not do
+
+`map = auto` allocates only in maps past the engine's two, never the two free
+vanilla channels. `resourcemap` component 3 reads **255 on every texel** of
+`terrain3`, `terrain4`, `terrain5`, `terrainblank` and every tutorial map, so a
+deposit handed it silently reports maximum richness everywhere. That is a fine
+thing to opt into by naming it and a bad thing to be given. `resourcemap2`
+component 2 is not free at all.
+
+## The terrain's material mask
+
+`map = terrain` puts a deposit where **gravel** already lives: component 2 of the
+splat map at `terrain+0x158`, the one the ground textures blend through. Mining
+it wears the surface away, which is what a gravel pit or a sand pit looks like.
+
+Three things differ from a resource map, and each is one substitution.
+
+**Sampling.** Gravel's dispatch is not in the chain at `0x1DD773` — it is a
+separate branch at `0x1DD907`. But that branch writes the same `[rsp+0x5C]` and
+takes the position from `xmm7`/`ebx`, which hold what `[rsp+0x40]` holds, so a
+mask deposit is an ordinary case in the chain with the texture load replaced by
+`mov r9,[gameobj] / mov r9,[r9+0xED8] / mov r9,[r9+0x158]`.
+
+**The bracket.** What it cannot inherit is `MaskTextureOpen`. The sampler reads a
+CPU-side copy and the mask is a texture the editor writes, so it must be
+bracketed — and opening it per sample point would be a GPU `Map`/`Unmap` per
+point, the mistake [07-pitfalls.md](07-pitfalls.md) already records. So there are
+**two more patch sites**, `0x1DD499` and `0x1DDE08`, each five instructions of
+exactly the same shape. They are verified and patched **only when a section asks
+for the mask**, and both or neither: an opened mask that is never closed leaves a
+D3D11 resource mapped.
+
+**Painting.** The mask is painted by `C3D_TERRAIN::EditMask`, not by the deposit
+texel writer, and its tab is the editor's **Rocks** tab rather than Resources.
+Same shape as before: clone `paint_rock`/`erase_rock`, borrow the rock brush at
+`0x235300`, and rewrite the channel argument in an import hook on `EditMask`
+while one of our calls is in flight. `EditMask`'s channel encoding turns out to
+be the deposit brush's — `(component + 1) & 3`, so rock is channel 3 and
+component 2 — which is why one field carries both.
+
+| Mask component | What is there |
+|---|---|
+| 0 | a ground layer, no deposit |
+| 1 | a ground layer, no deposit |
+| 2 | a ground layer — gravel's, and what the rock brush paints |
+| 3 | a ground layer — what the oasis brush paints |
+
+**None of the four is a free channel**, and calling them that was wrong. Every
+one is a ground layer the terrain already blends, so a deposit here is mined
+wherever that layer is painted — which is exactly how gravel works and the
+reason to put a deposit in the mask at all. What the layer *looks* like is a
+per-terrain asset question:
+
+```
+media_soviet/<terrain>/material.mtl
+  $TEXTURE  5 tiles_normal/grass2.dds     +  6 grass2bump
+  $TEXTURE  7 tiles_normal/field1.dds     +  8 field1bump
+  $TEXTURE  9 tiles_normal/burma_dirt2.dds+ 10 grass1bump
+  $TEXTURE 11 tiles_normal/rockburma.dds  + 12 rockburma_nm
+```
+
+Four layers, four mask components, and the shader has exactly four sets of
+`LayerNTileSize` / `LayerNDisplacement` constants. **Giving a deposit a texture
+of its own is editing that file** — a slot number and a `.dds`, served through
+the VFS like any other asset, no code at all. Adding a *fifth* layer is not
+possible without changing the shader.
+
+Which `$TEXTURE` slot belongs to which mask component is **not established
+here**; the cheap way to settle it is to paint one component in the editor and
+look at the ground.
+
+The tool name is cloned over `paint_rock`, ten characters, so `editor` is capped
+at **four** for a mask deposit rather than seven.
+
+### Limits
+
+Ten maps (`resourcemap` … `resourcemap10`), forty channels, and 32 sections.
+Each extra map is 4 MB of texture per world and 4 MB in every save that has one.
 
 ## What the game does with a type
 
@@ -107,8 +268,7 @@ the one subsystem that emits instructions rather than swapping a pointer.
    [tin]
    token         = $TYPE_MINE_TIN
    type          = 11
-   map           = resourcemap
-   component     = 3
+   map           = auto
    radius        = ore
    icon          = tin_ore
    minimap       = 1
@@ -119,6 +279,11 @@ the one subsystem that emits instructions rather than swapping a pointer.
    every comparison the patch splices in takes a sign-extended `imm8`.
    `editor` is capped at **seven characters**: the tool name is written over a
    clone of `paint_bauxite`'s and a longer string would not fit.
+
+   `map = auto` takes the next free channel, always in a map the plugin makes
+   itself, and `component` is then not needed. Name a `map` and a `component`
+   instead to put the deposit on a specific channel — including one of the two
+   free vanilla ones, which `auto` will not hand out.
 
 3. **Drop two 96×96 PNGs** in `vfs/media_soviet/editor/` named
    `tool_paint_<editor>.png` and `tool_erase_<editor>.png`, if the deposit
@@ -132,11 +297,22 @@ No source change, no rebuild. `tesmioloader.log` reports what it made of the
 section:
 
 ```
-deposits  "tin" type 11 "$TYPE_MINE_TIN" -> resourcemap component 3, radius from the game, editor channel 3 (slot 6, column 6)
-patch     deposit type 11 added: "$TYPE_MINE_TIN" in building.ini, resourcemap component 3
+deposits  "tin" type 11 "$TYPE_MINE_TIN" -> resourcemap3 component 0, radius from the game, editor channel 5 (slot 6, column 6)
+deposits  1 map(s) past the engine's two: resourcemap3..resourcemap3
+maps      wrote the blank deposit map to ...\vfs\media_soviet\tesmio\resourcemap_blank.dds
+maps      1 map(s) past the engine's two are loaded and saved with the world
+patch     deposit type 11 added: "$TYPE_MINE_TIN" in building.ini, resourcemap3 component 0
 minimap   2 mod layer(s) hooked
 editor    2 mod brush pair(s) hooked
 ```
+
+and, once a world loads:
+
+```
+maps      resourcemap3 = 000001C0... (blank)
+```
+
+or the terrain's own file where it has one.
 
 A section that would produce a broken patch is **dropped, not repaired** — a
 bad type number here becomes spliced code, so the cost of guessing is a
@@ -146,7 +322,9 @@ corrupted process rather than a wrong colour. Rejections say why:
 |---|---|
 | `type must be 10..127` | collides with the game's own types, or will not encode |
 | `component must be 0..3` | there are four channels per map |
+| `map must be resourcemap..resourcemap10, or auto` | ten maps is the plugin's own bound |
 | `duplicate type` / `duplicate token` / `duplicate channel` | two sections claim the same thing |
+| `no free channel left` | `auto` with all forty channels spoken for |
 | `no usable radius` | `radius` names neither a known constant nor a number |
 | `WARN shares a channel with iron` | legal, and almost always a typo |
 
@@ -281,6 +459,22 @@ constant the badge size reads.
 Each button's icon comes from `ResourceGet(self, "<name>")` and the texture
 pointer at record `+0x48`, so a mod resource's button needs no new art.
 
+### Hover text
+
+Also no unexported formatter, which is what this document used to claim. Every
+vanilla layer builds its own with a `swprintf`:
+
+```c
+Resource* r = ResourceGet(&game, "coal");
+FUN_140005290(&buffer /* 0x9E24B0 */, 0x800, L"%ls: %ls",
+              GetString(&lang, 0x2F3), GetString(&lang, r[0x40]));
+```
+
+One global wide buffer the panel draws afterwards, and whoever was hovered last
+owns it. A mod layer writes the same thing from the same three pieces it already
+has — the resource its `icon` names, that record's caption id one field along
+from the texture, and the same `0x2F3` label.
+
 ### What the shader actually does
 
 `media_soviet/shaders_d3d11/default_panel2d.inix` holds the `MinimapColors` and
@@ -330,6 +524,29 @@ So a pass must open with `EndDraw` then `BeginDraw(technique)`, which is how
 `EndDraw`, never between `Draw` and `EndDraw`. `0x4BDDE0` also *returns* with a
 bracket open, because its tail is `EndDraw` / `PrintAllTexts` /
 `BeginDraw(NULL)`. Full detail in [07-pitfalls.md](07-pitfalls.md).
+
+### The red terrain overlay
+
+Painting a vanilla deposit turns the editor's terrain grid red under the brush.
+That is a render pass at rva `0xAEE0`, driven by six bytes in the game object —
+one per channel the base game can paint, each carrying that channel's unit
+vector. **There is no byte for component 3 of either map**, which is why copper
+painted a channel nothing drew: not a missing capability, a missing flag.
+
+The hook reproduces none of it. It **brackets** the vanilla pass: sets the flag
+whose vector is the component wanted, points the map that pass reads at
+whichever texture the deposit lives in — so `resourcemap2` and the plugin's own
+maps go through the branch that only knows how to read the first — lets the
+engine draw, and puts all of it back. Component 3 borrows coal's flag and has
+the sixteen bytes of its vector rewritten for the length of that one call.
+
+The gate is the editor object, handed over by the per-frame cursor hook and
+consumed here. The render function runs in the game too, and a tool left
+selected in a previous session would otherwise paint the terrain red in the
+middle of a city. One editor frame, one overlay.
+
+Full table of the six flags and the shader in
+[02-findings.md](02-findings.md).
 
 ### Known cosmetic difference
 
@@ -516,10 +733,27 @@ constants the vanilla grid uses — `x = DPI*(50 + 85) + column * DPI * 105 *
 Reading the constants rather than hard-coding the pixels means a patch that
 moves the grid moves the mod buttons with it.
 
-The buttons have no hover tooltip: the vanilla accumulator is one stack local
-passed through all ten calls and handed to `0x383BD0` before the function
-returns, which has already happened by the time an appended hook runs. Icon,
-hover tint, click and selection badge all work.
+**The hover text works, and the accumulator was never the obstacle.** It is one
+qword, not a buffer: `0x3826C0` writes the hovered tool's **descriptor** into it
+at `0x382A29`, and the panel hands that to `0x383BD0`, which reads two fields off
+the descriptor it names —
+
+```c
+tool+0x48 == 0  ->  wcscpy(editorSelf+0xD5A0, GetString(lang, tool+0x40))
+tool+0x48 != 0  ->  the rich building tooltip, drawn at the mouse
+```
+
+Every terrain tool has `+0x48 == 0`, so a mod brush takes the simple path and
+needs nothing but a text id at `+0x40`. The buttons were silent only because the
+panel calls `0x383BD0` before it returns, which is before an appended hook has
+drawn anything, and our accumulator went nowhere. **Calling the consumer
+ourselves, once, after our own buttons, is the whole fix.**
+
+The text is the deposit's own name, not the donor's: `+0x40` on each clone is set
+to the caption id of the resource its `icon` names, read from that record one
+field along from the texture the button already takes. Nothing is minted — a
+resource from `plugins/resources.ini` already carries a private id the
+`resources` plugin answers, and a base-game one carries the game's.
 
 Icons live at `vfs/media_soviet/editor/tool_paint_<editor>.png` and
 `tool_erase_<editor>.png`, 96×96 RGBA, loaded explicitly as above; a missing

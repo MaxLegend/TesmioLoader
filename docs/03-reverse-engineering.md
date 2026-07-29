@@ -160,6 +160,8 @@ belongs to.
 | `checkcave.py` | re-implements the patch emitter in Python and disassembles it — the way spliced code is verified |
 | `channels.py` | non-zero byte counts per colour channel of every map's `resourcemap*.dds`. Re-run after a game update before assuming a channel is still free |
 | `dds2png.py`, `tint_dxt1.py` | asset conversion and DXT1 endpoint recolouring |
+| `btf.py` | language files. `find <text>` resolves a label the game draws to its id, which is an immediate in the code and therefore a one-grep route to the UI function that draws it. `unpack`/`pack` convert a `.btf` to editable text and back, `patch` applies an overlay of a few ids to a stock file, `selftest` round-trips all twenty-one byte for byte |
+| `btf_gui.py` | the same two conversions as a window, for translators rather than for debugging. `btf_gui.bat` opens it. It imports `btf.py` rather than repeating it, captures the warnings `btf.py` writes to `stderr` — `None` under `pythonw` — into a log pane, and reads a packed file back before reporting success |
 | `nmf.py` | a mesh's submaterial names, so a cloned building's `.mtl` declares the right ones instead of guessing. `--mtl` prints a skeleton, `--nodes` lists `$COST_WORK_BUILDING_NODE` candidates |
 
 ### Sanity check the decompiler

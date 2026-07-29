@@ -17,11 +17,20 @@ cl /nologo /O2 /MT /W3 /EHsc /LD ^
    src\tesmioloader.cpp /link kernel32.lib
 if errorlevel 1 ( echo [build] tesmioloader.dll FAILED & exit /b 1 )
 
+rem A windowed program: wWinMain, and /SUBSYSTEM:WINDOWS so double-clicking it
+rem does not open a console behind the window. It attaches to the parent console
+rem when there is one, so --nogui from a terminal still prints.
+rem
+rem /MANIFEST:EMBED because the source declares a MANIFESTDEPENDENCY on
+rem Microsoft.Windows.Common-Controls v6 for themed checkboxes, and link.exe
+rem otherwise leaves it in a tesmiolauncher.exe.manifest beside the exe - which
+rem works only as long as nobody copies the exe on its own.
 echo [build] tesmiolauncher.exe
 cl /nologo /O2 /MT /W3 /EHsc ^
    /Fo"build\\" /Fd"build\\" /Fe"build\tesmiolauncher.exe" ^
-   src\tesmiolauncher.cpp /link kernel32.lib
+   src\tesmiolauncher.cpp /link /SUBSYSTEM:WINDOWS /MANIFEST:EMBED kernel32.lib
 if errorlevel 1 ( echo [build] tesmiolauncher.exe FAILED & exit /b 1 )
+if exist build\tesmiolauncher.exe.manifest del build\tesmiolauncher.exe.manifest
 
 rem Plugins. One folder per plugin under plugins\, each holding <name>.cpp and
 rem optionally <name>.ini; both land in build\plugins\, which is what the loader
@@ -41,7 +50,15 @@ for /d %%P in (plugins\*) do (
     )
 )
 
-copy /y tesmioloader.ini build\tesmioloader.ini >nul
+rem build\tesmioloader.ini is the live config: the launcher writes the plugin
+rem checkboxes and the game path into it, so overwriting it on every build would
+rem throw away what the user chose. Copied only when it is not there yet - to
+rem pick up new defaults from the repo copy, delete it and build again.
+if not exist build\tesmioloader.ini (
+    copy /y tesmioloader.ini build\tesmioloader.ini >nul
+) else (
+    echo [build] build\tesmioloader.ini kept - delete it to take the repo defaults
+)
 if not exist build\vfs mklink /J build\vfs vfs >nul 2>&1
 
 echo [build] ok -^> build\tesmiolauncher.exe

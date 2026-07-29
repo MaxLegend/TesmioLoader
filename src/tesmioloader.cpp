@@ -36,6 +36,7 @@ static HMODULE          g_self;
 static HMODULE          g_exe;
 static BYTE*            g_exeBase;
 static char             g_baseDir[MAX_PATH];
+static char             g_iniPath[MAX_PATH];    // baseDir\tesmioloader.ini
 static char             g_vfsRoot[MAX_PATH];
 static CRITICAL_SECTION g_lock;
 static HANDLE           g_hLog   = INVALID_HANDLE_VALUE;
@@ -1265,6 +1266,20 @@ static void BuildHostTable()
 
 // --- loading --------------------------------------------------------------
 
+// One key per DLL in the `[plugins]` section of tesmioloader.ini, keyed by the
+// file name without its extension, and absent means on. That is what the
+// launcher's checkboxes write, and the reason the choice is a config key rather
+// than a renamed file: a plugin the user turned off is still on disk, still
+// listed by the launcher, and still one keystroke from coming back.
+static bool PluginEnabled(const char* file)
+{
+    char key[64];
+    strncpy_s(key, sizeof(key), file, _TRUNCATE);
+    if (char* dot = strrchr(key, '.')) *dot = 0;
+
+    return GetPrivateProfileIntA("plugins", key, 1, g_iniPath) != 0;
+}
+
 static void LoadOnePlugin(const char* file)
 {
     if (g_pluginCount >= MAX_PLUGINS)
@@ -1398,6 +1413,11 @@ static void LoadPlugins()
     do
     {
         if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
+        if (!PluginEnabled(fd.cFileName))
+        {
+            Logf("plugin   %-16s off in tesmioloader.ini [plugins]", fd.cFileName);
+            continue;
+        }
         LoadOnePlugin(fd.cFileName);
     } while (FindNextFileA(h, &fd));
     FindClose(h);
@@ -1490,8 +1510,7 @@ static void PatchMenuVersion()
 
 static void ReadConfig()
 {
-    char ini[MAX_PATH];
-    _snprintf_s(ini, sizeof(ini), _TRUNCATE, "%s\\tesmioloader.ini", g_baseDir);
+    const char* ini = g_iniPath;
     if (GetFileAttributesA(ini) == INVALID_FILE_ATTRIBUTES) return;
 
     g_traceReads = GetPrivateProfileIntA("tesmioloader", "trace_reads",  g_traceReads, ini);
@@ -1534,6 +1553,7 @@ static void Init()
     GetModuleFileNameA(g_self, g_baseDir, MAX_PATH);
     if (char* s = strrchr(g_baseDir, '\\')) *s = 0;
     _snprintf_s(g_vfsRoot, sizeof(g_vfsRoot), _TRUNCATE, "%s\\vfs", g_baseDir);
+    _snprintf_s(g_iniPath, sizeof(g_iniPath), _TRUNCATE, "%s\\tesmioloader.ini", g_baseDir);
 
     ReadConfig();
 

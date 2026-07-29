@@ -105,9 +105,43 @@ static bool  g_layoutDone;
 struct ResVector { BYTE* begin; BYTE* end; BYTE* cap; };
 static DWORD g_vecRva = 0x9E11C0;
 
-// Records the array should have room for. The engine ships 63; anything larger
-// makes tesmioloader move the buffer. 0 leaves the engine's allocation alone.
+// The engine's own cache of hand-picked records, and the reason relocation used
+// to look unsafe.
+//
+// ResourceGet is `(gameObject, name)` and reads its array out of `self+0xC2B0`
+// - which *is* this vector. The game object is the static at rva 0x9D4F10 and
+// 0x9D4F10 + 0xC2B0 == 0x9E11C0, so the vector object is a field of it and
+// everything else here is expressed relative to the vector rather than to a
+// second hard-coded address.
+//
+// Immediately behind those three pointers, at `self+0xC2C8`..`+0xC488`, sit 57
+// qwords the engine fills at rva 0x2A82B0 with one ResourceGet per name - the
+// records it wants by hand instead of by lookup. Fifty-three of them point into
+// the array; the first is `workers`, index 0, so it is bit-for-bit equal to
+// `begin`. **That is the "second structure holding the array base"
+// 07-pitfalls.md warned about** - not a container, a cached record that a
+// memory scan cannot tell from the base pointer. The other four -
+// `self+0xC3B8`, `+0xC3C0`, `+0xC418`, `+0xC420` - are the standalone records
+// ResourceGet compares against before it scans anything, and never point into
+// the array at all.
+//
+// Ordering already keeps this consistent: the cache is filled through our own
+// hook and EnsureArmed runs before the original, so the very first lookup the
+// engine makes already returns a pointer into the new buffer. Carrying the
+// block across anyway costs one loop and removes the argument.
+#define RES_CACHE_OFF   0x18                  // from the vector object
+#define RES_CACHE_COUNT 57
+
+// Floor on how many records the array should have room for, from
+// `resource_capacity`. 0 means "whatever [list] needs" - the plugin sizes the
+// array itself and relocates when the engine's own 63 are not enough. A
+// negative value pins the array to the engine's allocation and refuses to move
+// it, which is the behaviour every version before this one had.
 static int g_wantCapacity = 0;
+
+// Set once the array in front of us is big enough, so a failed relocation is
+// reported once rather than on every lookup.
+static bool g_warnedCapacity;
 
 // Offset of the localisation id inside a record, found by diffing the records
 // of workers/coal/rawiron/alcohol - the only field that differed and stayed
@@ -163,8 +197,19 @@ struct ResEntry
     int     textId;
     bool    armed;
 };
-static ResEntry g_reg[32];
+
+// How many names [list] may declare. Nothing in the engine chooses this number
+// - the array is grown to whatever is asked for - so it is only the size of the
+// registry this plugin keeps, about 220 bytes an entry. It is deliberately far
+// past anything that would be sensible content: what actually runs out first is
+// the game's own tolerance for resources it was never built with, and that
+// shows up when a modded good is *used* rather than when it is declared. See
+// the purchase bucket in docs/07-pitfalls.md.
+#define RES_MAX_ENTRIES 256
+
+static ResEntry g_reg[RES_MAX_ENTRIES];
 static int      g_regCount;
+static bool     g_regOverflow;
 
 // Parsed by hand rather than through the profile API: display names are UTF-8
 // and GetPrivateProfileString would mangle anything outside the ANSI codepage.
@@ -181,9 +226,25 @@ static void LoadResourceRegistry()
         return;
     }
 
-    char   buf[8192];
-    DWORD  got = 0;
-    ReadFile(h, buf, sizeof(buf) - 1, &got, NULL);
+    // The whole file, however long it is. A fixed 8 KB buffer used to be enough
+    // for six resources and the comments around them; it is not a bound worth
+    // keeping once [list] can be any length, and a truncated read would drop
+    // entries silently rather than complain.
+    LARGE_INTEGER size = { 0 };
+    GetFileSizeEx(h, &size);
+    if (size.QuadPart <= 0 || size.QuadPart > 4 * 1024 * 1024)
+    {
+        CloseHandle(h);
+        Logf("registry  plugins\\resources.ini is %lld bytes - refusing to read it",
+             (long long)size.QuadPart);
+        return;
+    }
+
+    char* buf = (char*)malloc((size_t)size.QuadPart + 1);
+    if (!buf) { CloseHandle(h); Logf("registry  out of memory reading resources.ini"); return; }
+
+    DWORD got = 0;
+    ReadFile(h, buf, (DWORD)size.QuadPart, &got, NULL);
     CloseHandle(h);
     buf[got] = 0;
 
@@ -197,7 +258,17 @@ static void LoadResourceRegistry()
         // they share a file so a feature is one file. Any other section is
         // somebody else's and is skipped.
         if (line[0] == '[') { inSection = _strnicmp(line, "[list]", 6) == 0; continue; }
-        if (!inSection || g_regCount >= 32) continue;
+        if (!inSection) continue;
+        if (g_regCount >= RES_MAX_ENTRIES)
+        {
+            if (!g_regOverflow)
+            {
+                g_regOverflow = true;
+                Logf("registry  [list] has more than %d entries - the rest are ignored. "
+                     "Raise RES_MAX_ENTRIES in plugins/resources/resources.cpp", RES_MAX_ENTRIES);
+            }
+            continue;
+        }
 
         char* eq = strchr(line, '=');
         if (!eq) continue;
@@ -267,6 +338,7 @@ static void LoadResourceRegistry()
                  e.name, e.index, e.tmplIndex, e.textId);
         g_regCount++;
     }
+    free(buf);
 }
 
 // ---------------------------------------------------------------- seen-name table
@@ -360,13 +432,56 @@ static bool ResolveProcessMalloc()
     return false;
 }
 
+// Carries the engine's cached record pointers over to a moved array. A qword in
+// the cache block that lands exactly on a record boundary inside the old buffer
+// is one of ours; the four standalone records and any slot the engine has not
+// filled yet point elsewhere and are left alone.
+//
+// Normally rebases nothing, because relocation happens on the first lookup and
+// the cache is still all zeroes at that point. It is the belt to the ordering's
+// braces, and the line it logs is worth reading: a non-zero count means the
+// array moved later than it should have.
+static void RebaseResourceCache(ResVector* vec, BYTE* from, BYTE* to, int live)
+{
+    void** cache = (void**)((BYTE*)vec + RES_CACHE_OFF);
+    const size_t bytes = RES_CACHE_COUNT * sizeof(void*);
+    if (!Readable(cache, bytes)) return;
+
+    DWORD prot = 0;
+    if (!VirtualProtect(cache, bytes, PAGE_READWRITE, &prot))
+    {
+        Logf("resource  WARN  could not write the record cache (%lu) - %d pointer(s) may dangle",
+             GetLastError(), RES_CACHE_COUNT);
+        return;
+    }
+
+    int moved = 0;
+    for (int i = 0; i < RES_CACHE_COUNT; i++)
+    {
+        BYTE*  p = (BYTE*)cache[i];
+        size_t d = (size_t)(p - from);
+        if (!p || p < from || d >= (size_t)live * RES_STRIDE || (d % RES_STRIDE) != 0) continue;
+        cache[i] = to + d;
+        moved++;
+    }
+    VirtualProtect(cache, bytes, prot, &prot);
+
+    if (moved)
+        Logf("resource  %d cached record pointer(s) rebased - the array moved after the engine "
+             "had already resolved them", moved);
+}
+
 // Grows the resource array by moving it, the way reserve() would. Safe only
 // before anything has taken a Resource* into the old buffer, which is why this
-// runs on the very first lookup - ahead of the engine's own init loop.
+// runs on the very first lookup - ahead of the engine's own init loop - and why
+// the caller refuses once anything of ours is already published.
 //
 // The old block is deliberately left alone rather than freed: it costs a few
-// tens of kilobytes per map load and removes any chance of releasing memory the
-// engine still believes it owns.
+// tens of kilobytes once per process and removes any chance of releasing memory
+// the engine still believes it owns. **Once** per process, not per map load:
+// the engine reuses the buffer across worlds - a world change is `end = begin`
+// at rva 0x25EC7A, a clear() and not a destructor - so a capacity raised here
+// survives every later load and nothing moves a second time.
 static bool RelocateResourceArray(ResVector* vec, int live, int newCap)
 {
     if (!ResolveProcessMalloc())
@@ -396,6 +511,8 @@ static bool RelocateResourceArray(ResVector* vec, int live, int newCap)
     vec->end   = fresh + (size_t)live * RES_STRIDE;
     vec->cap   = fresh + (size_t)newCap * RES_STRIDE;
     VirtualProtect(vec, sizeof(ResVector), prot, &prot);
+
+    RebaseResourceCache(vec, old, fresh, live);
 
     Logf("resource  array moved %p -> %p, capacity %d records (%d live)",
          old, fresh, newCap, live);
@@ -510,6 +627,32 @@ static void AttachResourceMeshes(BYTE* rec, const char* name)
              name, name, name);
 }
 
+// How many records the array has to hold for everything in [list] to fit.
+//
+// Deliberately **not** a function of how much of [list] is already published:
+// it is the base game's own count plus every declared entry, so it returns the
+// same number before and after arming and the array is therefore moved once and
+// never again. Working from `live + still to do` instead would grow the answer
+// as records land and relocate on every pass.
+//
+// `live` only ever raises it, for the day a game update ships more than 57
+// records of its own and the constant below stops being the whole base game.
+static int NeededCapacity(int live)
+{
+    int pending = 0;
+    int need    = RES_KNOWN + g_regCount;
+
+    for (int i = 0; i < g_regCount; i++)
+    {
+        if (g_reg[i].armed) continue;
+        if (g_reg[i].index < 0) pending++;
+        else if (g_reg[i].index + 1 > need) need = g_reg[i].index + 1;
+    }
+    if (live + pending > need) need = live + pending;
+    if (g_wantCapacity > need) need = g_wantCapacity;      // the .ini's floor
+    return need;
+}
+
 // The vector at the known rva is the authority on the current array: its begin
 // pointer identifies the allocation and its end bounds every lookup the engine
 // makes. A map load replaces both, which is how a reload is detected - deriving
@@ -532,9 +675,10 @@ static void EnsureArmed()
 
     if (base != g_resBase)
     {
-        g_resBase    = base;
-        g_nameOff    = -1;
-        g_warnedSlot = false;
+        g_resBase       = base;
+        g_nameOff       = -1;
+        g_warnedSlot    = false;
+        g_warnedCapacity = false;
         for (int i = 0; i < g_regCount; i++) g_reg[i].armed = false;
         Logf("resource  array now at %p", base);
     }
@@ -543,25 +687,17 @@ static void EnsureArmed()
     ptrdiff_t cap  = vec->cap - base;
     if (span <= 0 || (span % RES_STRIDE) != 0 || cap < span) return;
 
+    // A sanity bound on the vector, not a limit on [list]: anything outside it
+    // means the three pointers are not a vector of records at all. Derived from
+    // the registry size so raising that cannot quietly turn this into the next
+    // ceiling.
     int live = (int)(span / RES_STRIDE);
     int room = (int)(cap / RES_STRIDE);
-    if (live < 2 || live > 400) return;
+    if (live < 2 || live > RES_KNOWN + RES_MAX_ENTRIES + 64) return;
 
-    // Headroom past the engine's own capacity. Done first, so that everything
-    // below - including the engine's init loop - only ever sees the new buffer.
-    if (g_wantCapacity > room && RelocateResourceArray(vec, live, g_wantCapacity))
-    {
-        base = vec->begin;
-        room = g_wantCapacity;
-        if (base != g_resBase)
-        {
-            g_resBase    = base;
-            g_nameOff    = -1;
-            g_warnedSlot = false;
-            for (int i = 0; i < g_regCount; i++) g_reg[i].armed = false;
-        }
-    }
-
+    // The name offset, before anything else needs it. It is a property of the
+    // record layout rather than of the allocation, so it survives the array
+    // moving and is only ever looked for once.
     if (g_nameOff < 0)
     {
         for (int off = 0; off + 16 < RES_STRIDE; off++)
@@ -576,36 +712,85 @@ static void EnsureArmed()
         if (g_nameOff < 0) return;
     }
 
+    // Armed is a claim about the array in front of us, not a fact about this
+    // session, so it is re-checked rather than trusted.
+    //
+    // A world load rebuilds the vector, and the allocator hands back the same
+    // block often enough that `begin` is unchanged - so the base test above sees
+    // nothing while `end` has gone back to 57 and our record has been
+    // overwritten by the engine's own init. Left latched, the entry is never
+    // republished: every building.ini naming it resolves to -1, and the icon at
+    // +0x48 still points at a texture that was released with the previous world,
+    // which is what crashed on hover.
+    //
+    // Done as its own pass rather than inside the publishing loop, because both
+    // the capacity below and the guard on moving the array ask how much of
+    // [list] is really live and would otherwise be reading stale flags.
     for (int r = 0; r < g_regCount; r++)
     {
         ResEntry& e = g_reg[r];
+        if (!e.armed) continue;
+
+        BYTE* have = base + (size_t)e.resolved * RES_STRIDE;
+        if (e.resolved >= 0 && e.resolved < live &&
+            Readable(have, RES_STRIDE) &&
+            strncmp((char*)(have + g_nameOff), e.name, 32) == 0)
+            continue;                                 // still ours, nothing to do
+
+        e.armed = false;
+        Logf("resource  \"%s\" no longer at index %d - vector was rebuilt in place, re-arming",
+             e.name, e.resolved);
+    }
+
+    // Room for the whole of [list], past the 63 records the engine allocates.
+    //
+    // Done before anything is published, so that everything downstream -
+    // including the engine's own init loop, which resolves forty records by name
+    // immediately after building the array and caches what it gets back - only
+    // ever sees the new buffer.
+    //
+    // Refused once anything of ours is already live in this array: by then the
+    // building-type parser has taken Resource* of its own into it and moving the
+    // buffer would strand them. It cannot happen in practice, because nothing is
+    // published until the array is big enough; the guard is there to keep it
+    // that way.
+    int need = NeededCapacity(live);
+    if (need > room && g_wantCapacity >= 0)
+    {
+        bool anyArmed = false;
+        for (int i = 0; i < g_regCount; i++) if (g_reg[i].armed) anyArmed = true;
+
+        if (anyArmed)
+        {
+            if (!g_warnedCapacity)
+            {
+                g_warnedCapacity = true;
+                Logf("resource  WARN  need room for %d records and have %d, but %d are already "
+                     "live - not moving the array now", need, room, live);
+            }
+        }
+        else if (RelocateResourceArray(vec, live, need))
+        {
+            base = vec->begin;
+            room = need;
+            g_resBase = base;
+        }
+        else if (!g_warnedCapacity)
+        {
+            g_warnedCapacity = true;
+            Logf("resource  WARN  could not grow the array to %d records - only %d of the %d "
+                 "names in [list] will fit", need, room - live, g_regCount);
+        }
+    }
+
+    for (int r = 0; r < g_regCount; r++)
+    {
+        ResEntry& e = g_reg[r];
+        if (e.armed) continue;
 
         // Recomputed per entry: arming one resource extends the vector, and
         // that is exactly what makes the next slot claimable in the same pass.
         live = (int)((vec->end - base) / RES_STRIDE);
-
-        // Armed is a claim about the array in front of us, not a fact about
-        // this session, so it is re-checked rather than trusted.
-        //
-        // A world load rebuilds the vector, and the allocator hands back the
-        // same block often enough that `begin` is unchanged - so the base test
-        // above sees nothing while `end` has gone back to 57 and our record has
-        // been overwritten by the engine's own init. Left latched, the entry is
-        // never republished: every building.ini naming it resolves to -1, and
-        // the icon at +0x48 still points at a texture that was released with
-        // the previous world, which is what crashed on hover.
-        if (e.armed)
-        {
-            BYTE* have = base + (size_t)e.resolved * RES_STRIDE;
-            if (e.resolved >= 0 && e.resolved < live && g_nameOff >= 0 &&
-                Readable(have, RES_STRIDE) &&
-                strncmp((char*)(have + g_nameOff), e.name, 32) == 0)
-                continue;                             // still ours, nothing to do
-
-            e.armed = false;
-            Logf("resource  \"%s\" no longer at index %d - vector was rebuilt in place, re-arming",
-                 e.name, e.resolved);
-        }
 
         int want = e.index;
         if (want < 0)
@@ -631,12 +816,26 @@ static void EnsureArmed()
         }
 
         if (want > live) continue;                  // engine has not got there yet
-        if (want < live || want >= room)
+        if (want >= room)
+        {
+            // The array should have been grown above, so getting here means the
+            // relocation was refused or failed. Say which, rather than pointing
+            // at resources.ini - nothing in it is wrong.
+            if (!g_warnedSlot)
+            {
+                Logf("resource  \"%s\": no room at index %d (%d live, room %d) - the array was "
+                     "not grown%s", e.name, want, live, room,
+                     g_wantCapacity < 0 ? " because resource_capacity is negative" : "");
+                g_warnedSlot = true;
+            }
+            continue;
+        }
+        if (want < live)
         {
             if (!g_warnedSlot)
             {
-                Logf("resource  \"%s\": slot %d unusable (%d live, room %d) - fix resources.ini",
-                     e.name, want, live, room);
+                Logf("resource  \"%s\": slot %d is taken (%d live) - fix resources.ini",
+                     e.name, want, live);
                 g_warnedSlot = true;
             }
             continue;
@@ -756,7 +955,7 @@ static unsigned __int64 h_ResourceGet(void* a1, void* a2, void* a3, void* a4)
             BYTE* rec = g_resBase + (size_t)g_reg[i].resolved * RES_STRIDE;
             InterlockedIncrement(&g_nInjected);
             if (first) Logf("resource  serving \"%s\" from reserved slot %d (%p)",
-                            name, g_reg[i].index, rec);
+                            name, g_reg[i].resolved, rec);
             return (unsigned __int64)rec;
         }
     }
@@ -813,7 +1012,7 @@ extern "C" __declspec(dllexport) int TsmPluginInit(const TsmHost* host, TsmPlugi
 {
     TsmBind(host);
     info->name    = "resources";
-    info->version = "1.0";
+    info->version = "1.1";
 
     const char* ini = "plugins\\resources.ini";
     char v[64];
@@ -829,7 +1028,11 @@ extern "C" __declspec(dllexport) int TsmPluginInit(const TsmHost* host, TsmPlugi
         g_resRva = (DWORD)strtoul(v, NULL, 0);
     if (H->configString(ini, "resources", "resource_vector_rva", v, sizeof(v), "") && v[0])
         g_vecRva = (DWORD)strtoul(v, NULL, 0);
-    g_wantCapacity = H->configInt(ini, "resources", "resource_capacity", g_wantCapacity);
+    // Read as a string, not through configInt: GetPrivateProfileInt answers 0
+    // for anything negative, which would silently turn `resource_capacity = -1`
+    // - "never move the array" - into "size it automatically", the opposite.
+    if (H->configString(ini, "resources", "resource_capacity", v, sizeof(v), "") && v[0])
+        g_wantCapacity = (int)strtol(v, NULL, 0);
 
     g_hRes = TsmOpenLog("tesmioloader.resources.log");
     const char* hdr = "; name                     which-arg  return value   discovering call site\r\n";
@@ -860,7 +1063,11 @@ extern "C" __declspec(dllexport) int TsmPluginInit(const TsmHost* host, TsmPlugi
                            STOLEN_BYTES, "ResourceGet"))
         return 1;
 
-    Logf("resource  hook mode=%d rva=0x%lX, %d name(s) declared", g_resHook, g_resRva, g_regCount);
+    Logf("resource  hook mode=%d rva=0x%lX, %d name(s) declared, array %s",
+         g_resHook, g_resRva, g_regCount,
+         g_wantCapacity < 0 ? "left at the engine's own size" :
+         g_wantCapacity > 0 ? "grown to [list] or the configured floor, whichever is larger"
+                            : "grown to fit [list]");
     H->provide(TSM_SERVICE_RESOURCES, TSM_RESOURCES_VERSION, &kResourceApi);
     return 0;
 }

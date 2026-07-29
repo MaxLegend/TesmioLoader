@@ -218,10 +218,46 @@ independent of it. Ordering by name is a last resort, not a mechanism.
 `plugins = 0` in `tesmioloader.ini` skips the folder entirely. It is the first
 thing to try when the game will not start.
 
+## Turning one off
+
+A `[plugins]` section in `tesmioloader.ini`, one key per DLL named after the file
+without its extension. **A key that is not there counts as 1**, so the section is
+empty until something is turned off:
+
+```ini
+[plugins]
+needs = 0
+```
+
+```
+plugin   needs.dll        off in tesmioloader.ini [plugins]
+plugin   5 loaded
+```
+
+The check happens in `LoadPlugins` before `LoadLibrary`, so a disabled plugin is
+never mapped and its `DllMain` never runs.
+
+This is what the launcher's checkboxes write, and the reason it is a config key
+rather than a renamed or moved file: a plugin the user turned off is still on
+disk, still listed in the window, and still one click from coming back. It also
+means the state is readable by anything that can read an ini — the loader, the
+launcher, and a person with a text editor — rather than being implied by which
+files happen to be present.
+
+`build\tesmioloader.ini` is therefore **live config, not a build output**.
+`build.bat` copies the repo's copy over it only when it is not there yet;
+delete it to take new defaults.
+
+Three ways to switch a feature off, in order of how big the hammer is: its own
+`enabled = 0` in its own ini, which still loads and initialises the DLL; the
+`[plugins]` key, which does not load it at all; and `plugins = 0`, which skips
+every plugin.
+
 ## What goes wrong, and what the log says
 
 | Line | Meaning |
 |---|---|
+| `plugin   x.dll          off in tesmioloader.ini [plugins]` | its `[plugins]` key is 0. Never loaded, never initialised |
 | `plugin   "x.dll" failed to load (126)` | a missing dependency, usually a non-`/MT` build |
 | `plugin   "x.dll" is not a tesmioloader plugin` | one of the required exports is missing. Check `extern "C"` and `__declspec(dllexport)` |
 | `plugin   "x.dll" wants API 1, this loader is 2` | rebuild it against the current header |
