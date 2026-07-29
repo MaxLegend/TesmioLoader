@@ -129,6 +129,12 @@ and were nearly lost twice.
 | `DisasmMany.py` | out.asm, start:end… | the same for several ranges in one run |
 | `FindStringXrefs.py` | out.txt, string | code references to a literal |
 
+**`Disasm.py` is a trap on Windows.** Ghidra resolves a script name
+case-insensitively and searches its own paths as well as `-scriptPath`, so
+asking for `Disasm.py` can run `tools/pe/disasm.py` — the capstone one, which
+takes different arguments, fails on `No module named capstone`, and still exits
+0. Use `DisasmMany.py`; it has no twin.
+
 `Xrefs.py`, `DecompAt.py` and `DisasmMany.py` are the three you will reuse.
 Decompiled C is enough to understand a decision; **writing a patch, or a hook,
 needs the disassembly**, because you have to know the exact instruction lengths
@@ -154,6 +160,7 @@ belongs to.
 | `checkcave.py` | re-implements the patch emitter in Python and disassembles it — the way spliced code is verified |
 | `channels.py` | non-zero byte counts per colour channel of every map's `resourcemap*.dds`. Re-run after a game update before assuming a channel is still free |
 | `dds2png.py`, `tint_dxt1.py` | asset conversion and DXT1 endpoint recolouring |
+| `nmf.py` | a mesh's submaterial names, so a cloned building's `.mtl` declares the right ones instead of guessing. `--mtl` prints a skeleton, `--nodes` lists `$COST_WORK_BUILDING_NODE` candidates |
 
 ### Sanity check the decompiler
 

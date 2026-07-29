@@ -273,6 +273,159 @@ resource-shaped. While the icon was *also* missing the resource never got that
 far, so the crash appeared only after the icon was fixed, which made it look
 like the icon caused it.
 
+**This came back, and the second time it cost a whole debugging session.** The
+mechanism is worth having in full, because everything about how it presents is
+misleading.
+
+A `[list]` entry with **no files at all** — `copper2 = chemicals`, added as an
+experiment and never given assets — produces two crashes twenty seconds apart:
+
+```
+[22:36:15.070] === CRASH: ACCESS_VIOLATION at C3DDLL64.dll + 0xB0D04 ===
+[22:36:15.071] resource  "copper2": cargo mesh load faulted - keeping the template's
+   ... a whole world loads ...
+[22:36:37.206] === CRASH: ACCESS_VIOLATION at C3DDLL64.dll + 0xAC544 ===
+```
+
+`0xB0D04` is inside `C3D_MIDDLEPOINT::CreateManagedMaterial` and `0xAC544` is
+`mov rcx,[rdi+0x58] / cmp dword [rcx+rsi],0` inside `C3D_MESH::Render` — the
+mesh object is valid, its **node array is null and its node count is not**.
+
+The order is: `CreateManagedMesh` registers an empty mesh in the middlepoint's
+cache under a path that does not exist, `LoadFromFile` fails and leaves it
+empty, `LoadMaterial` on an empty mesh faults inside `CreateManagedMaterial`.
+The plugin's own `__try` catches that fault and carries on — **and that is the
+trap**. The fault is caught, the engine is not repaired, and the damage surfaces
+on the first frame rendered after the world has loaded, in a different function,
+on a different thread, with a stack that names nothing recognisable.
+
+Three lessons:
+
+- **Catching a fault inside the engine is not the same as surviving it.** A
+  `__try` around a call that half-built an engine-managed object buys nothing
+  but a delay.
+- **Ask before you build.** `LoadResourceMesh` now calls
+  `C3DHelp_CheckIfFileExist` first, and refuses to touch `CreateManagedMesh`
+  at all when the `.nmf` is not there. The import slot already carries the
+  loader's VFS hook, so a file that exists only under `tesmioloader\vfs`
+  answers yes. Paths are relative to `media_soviet`, the same form
+  `CreateManagedMesh` takes; the argument pair every caller in the game passes
+  is `(path, false, true)`.
+- **A crash 22 seconds and one world load after the cause is still that
+  cause.** The first line to look for in `tesmioloader.log` is not the last
+  one — it is the earliest `=== CRASH` or `faulted`, however harmless the log
+  makes it sound.
+
+A resource with no cargo geometry is legal now and draws as its template, with
+one `WARN` line naming the files it wanted.
+
+## A cloned building needs the donor's emissive material
+
+Second crash at `C3DDLL64.dll + 0xAC544` in this project, same instruction —
+`mov rcx,[rdi+0x58] / cmp dword [rcx+rsi],0`, a valid `C3D_MESH` whose node
+array is null — and a completely different cause from the
+[first one](#missing-cargo-models-crash-a-worker-thread).
+
+The furniture factory copied `clothing_factory.nmf` and `clothing_factory.mtl`
+and declared only `MATERIAL ../material.mtl` in `renderconfig.ini`. But
+`clothing_factory_e.mtl` exists too — the lit-window pass — and a mesh built
+for one expects it. **159 of the 493 base building materials have an `_e.mtl`,
+and 352 of 400 subscribed Workshop buildings declare `MATERIALEMISSIVE`.**
+
+The stationary accumulator had been fine without it for the same reason a coin
+lands heads: its donor, `eletric_substation`, has no `_e.mtl`. That made the
+missing keyword look optional.
+
+The check is one `ls`:
+
+```
+ls media_soviet/buildings/<donor>_e.mtl
+```
+
+If it is there, copy it as `material_e.mtl` beside `material.mtl` and add
+
+```ini
+ MATERIALEMISSIVE ../material_e.mtl
+```
+
+Both crashes at `0xAC544` say the same thing in the end: **a mesh object exists
+and its geometry does not.** The causes differ — a missing `.nmf`, a missing
+emissive material — but the first frame after a world load is always where it
+surfaces, twenty seconds and a whole load away from anything that looks
+related.
+
+## A mod resource wakes up dead code
+
+The first citizen to buy furniture crashed the game at
+`SOVIET64.exe + 0x198868`, reading address 8:
+
+```asm
+140198854  test rax,rax                  ; element count
+140198857  jz   done                     ; zero - nothing to do
+140198859  mov  r8,[r14]                 ; r8 = begin
+140198868  mulss xmm0,[r8+rcx*8+8]       ; <- r8 was null
+```
+
+`FUN_140198670(game, dst, resource, amount)` folds a purchase into a running
+total, and picks which total by comparing the resource against four cached
+records, falling through to a fifth bucket for anything else:
+
+```
+game+0xC300 -> game+0x12720      game+0xC318 -> game+0x12750
+game+0xC310 -> game+0x12738      game+0xC320 -> game+0x12768
+anything else                 -> game+0x12780
+```
+
+The four are the goods the base game sells. **The fifth branch is unreachable
+in a stock game**, so its vector was never constructed — `begin` null while
+`end` is not — and it sat there for years as code nobody could run. A modded
+good is the first thing that ever takes that branch.
+
+The lesson generalises past this one bucket: **adding a resource does not only
+add a resource, it makes reachable every "else" that the base game's fixed set
+of resources kept dead.** Those branches have never executed and are therefore
+the least tested code in the executable. When something crashes the first time
+a modded resource is *used* rather than declared, look for a comparison chain
+against a handful of cached records with a fallthrough at the end.
+
+The repair is small: a vector with a null `begin` and a non-null `end` is not a
+state any live vector can be in, so normalising it to properly empty is safe,
+and the loop guarded by `(end - begin) >> 4` then does nothing. Checking it
+every shop tick costs three reads, and a world load rebuilds the game object,
+so once at startup would not be enough.
+
+## `building.ini` has no comment syntax either
+
+The `.mtl` parser matching its keywords anywhere in the file is
+[already written down](02-findings.md). **`building.ini` is the same**, and it
+is worse there, because a mistake is not a wrong texture but a dead process:
+
+```ini
+// ... a shared one could only hold whichever class it declared.
+// $STORAGE_IMPORT_SPECIAL takes the resource as its third argument ...
+```
+
+The parser read that as a real declaration, took `takes` for the transport
+class and `the` for the resource, and `ResourceGet` came back null. The crash
+lands at `SOVIET64.exe + 0x117B91`, inside the 63 KB `building.ini` parser at
+`0x10E200`, reading `[0] + 0x30C`. The tell is one line above it in the log:
+
+```
+game.ERROR ResourceGet - not found the
+=== CRASH: ACCESS_VIOLATION at SOVIET64.exe + 0x117B91 ===
+```
+
+**A `ResourceGet - not found <ordinary English word>` is always a token in a
+comment.** The stock game produces hundreds of `not found waste` and
+`not found $PARTICLE` lines, which is why the noise is easy to look past — but
+those are keywords and resource names, not prose.
+
+So: `//` is fine, indentation is fine, the base game's own `-$VEHICLE_STATION`
+and `-------` are fine. **A `$` anywhere in a comment is not.** Write the
+keyword without its dollar when a comment has to name one. The stationary
+accumulator's `building.ini` had been doing that by luck since it was written;
+now both do it on purpose.
+
 ## PowerShell interpolates `$` in double quotes
 
 `"$TYPE_MINE_COAL"` becomes an empty string, and a search for it matches
@@ -300,7 +453,8 @@ listing shows a stale size. Open with `FileShare.ReadWrite`.
 
 The resource count is part of the save format. A save written with two mod
 resources will not load without them, and a stock save will not load with them.
-Expect to start a new game after changing `resources.ini`.
+Expect to start a new game after changing the `[list]` section of
+`plugins\resources.ini`.
 
 ## The decompiler reuses one variable for two constants
 
@@ -323,6 +477,76 @@ constant, worked perfectly. Days of "the hook must not be running".
 Ghidra names registers, not values. Whenever a decompiled float feeds geometry
 or an address, check it against the disassembly: here two adjacent `movss`
 instructions from `0x909DF4` and `0x909F70` made it obvious in seconds.
+
+## The constant that looks like the limit can be the search radius
+
+The walking distance turned up in two functions that regenerate walking and
+parking connections, `0x12DE30` and `0x12F480`, each writing one literal — 530
+and 2600 — into the same field of a path query, `+0x3C`, which the path expander
+reads as "drop any branch longer than this". Two functions, two plausible
+numbers, one field, and the shape of the check confirmed in disassembly. The
+first version of the `walking` plugin repointed both.
+
+Everything then looked right and nothing changed. The plugin logged its patch,
+the game's own regeneration pass ran on load — visible in the log as
+`Import - Regenerating walking and parking connections` — and citizens still
+refused to walk past 500 m.
+
+Those two functions are **collectors**: after a road changes they search outward
+from it to decide *which buildings* need their connections rebuilt, then hand
+that set to a builder. The builders are `0x12E1D0` and `0x12F830`, and their
+limits are the walking distance: **480** as a bare immediate at `0x12E2DD`, and
+2500 from `0x90B11C`. The collectors' radii are deliberately a little wider than
+the limits they serve, which is exactly why they look like the answer.
+
+- **A function that regenerates something is not necessarily the one that
+  computes it.** Follow the write to the structure being filled in. `0x12E1D0`
+  is the only function that clears `building+0xCA8` and pushes into it; that,
+  not the name-shaped reasoning, is what identifies it.
+- **Search for the value in every form, not just the one you found first.** The
+  first search was over `.rdata` and RIP-relative reads. 480 is an `imm32` in a
+  `mov dword ptr [rsp+0x7C]` and appears in no constant pool at all — a scan for
+  the four bytes `00 00 F0 43` in `.text` found it, and found it exactly once.
+- **A correct log line is not a working patch.** Every check the plugin makes
+  passed, because everything it was told to verify was true. The claim it could
+  not check was the one that mattered.
+
+And then the same mistake a second time, one level down. Version 1.1 patched the
+builder at `0x12E1D0` — correctly — and still nothing moved, because **the
+walking limit is written out twice**. `0x12E1D0` rebuilds a whole set of
+buildings and is called from the save loader; `0x12E6E0` rebuilds one building
+and is drained twenty at a time off the queue at `game+0x11F88` by `0x12EC50`,
+which is what a running game actually uses. Same logic, same field, its own copy
+of 480 — an immediate in one and `0x90AF38` in the other, which is why a scan
+for either form finds only one of them.
+
+- **Scan for the value in every form before concluding there is one site.** Both
+  scans were run and both were believed; neither was cross-checked against the
+  other's result.
+- **A second implementation of the same thing is common in this codebase.** The
+  `building.ini` parser carries its own copy of the storage logic
+  (`0x117B91`); walking carries its own copy of the connection builder. When one
+  patch site is verified and the effect is still absent, look for the twin
+  before looking for a new mechanism.
+- **After two clean logs and no effect, stop guessing and hook.** An inline hook
+  on the builder logging its arguments and results answers in one game load what
+  a day of disassembly argues about.
+
+And a third time, for the half that is drawn rather than simulated. With both
+builders patched, citizens walked the new distance — and the building window's
+walking-distance button still highlighted the vanilla 480 m. **The overlay does
+not read the connection vector.** `0x43EF10` runs the whole search again, with
+its own copies of the constant at `0x43F04A` and `0x43F835`, and draws the path
+polylines and metre labels from its own result; `0x43FEA0` does the same for
+cars. Four functions, one distance, no shared constant.
+
+- **A displayed value can have its own code path.** When the simulation obeys a
+  patch and the UI does not, the UI is not reading the simulation's data — look
+  for its own copy before doubting the patch.
+- **Count the readers of the constant, not the sites you have patched.**
+  `0x90AF38` has 31 code references; three of them are this distance. The other
+  28 are `mulss` against GUI coordinates, and skimming past them is how the
+  overlay pair got missed twice.
 
 ## `C3D_PANEL2D::Draw` does not draw
 

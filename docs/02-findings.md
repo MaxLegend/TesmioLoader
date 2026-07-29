@@ -372,6 +372,229 @@ with `if (2 < idx) idx++` then `idx + 1`, which can emit 1, 2, 3, 5, 6 and
 never 0, 4 or 7. Those three are not missing a capability, they are missing a
 caller. See [05-deposits.md](05-deposits.md) for the editor side.
 
+## Electricity, heat, and building storages
+
+Electricity is **not** a special case in the engine. It is an ordinary resource
+in an ordinary storage, moved between buildings by code that does not care what
+kind of building either end is. The same is true of heat.
+
+### A building's storages
+
+`building+0x970`…`+0x978` is a `std::vector` of storages, stride `0xE0`.
+
+| Offset | Contents |
+|---|---|
+| `+0x00` / `+0x08` | `std::vector<Slot>` begin and end, stride 16 — one slot per resource this storage can hold |
+| `+0x8C` | capacity, the figure `$STORAGE` declared |
+| `+0x90` | transport class, `RESOURCE_TRANSPORT_*` |
+| `+0xA8` | what has been handed out through it this tick |
+
+| Slot offset | Contents |
+|---|---|
+| `+0x00` | the resource record |
+| `+0x08` | content |
+| `+0x0C` | quality, 0..1 — a **source** with 0 hands out nothing. For electricity this *is* the node's voltage: `*(float**)(building+0x10E8)` points straight at it, confirmed by every line of a runtime dump agreeing |
+
+**Quality is only ever raised inside a transfer**, and a transfer only happens
+into a shortfall. A storage sitting at capacity with quality 0 therefore stays
+that way — it holds energy and has no way to be told the power is back. That is
+not a bug to route around casually: it is why a branch lights up the moment a
+wire is connected, while the storages are still empty, and goes dark again once
+they fill.
+
+Wire connections are a vector at `building+0xA10`…`+0xA18`, stride `0x60`:
+`+0x00` is the connection type (7 `ELETRIC_HIGH`, 8 `ELETRIC_LOW`), `+0x28` the
+line object. The line's two ends are at `+0x20` and `+0x28`, and each end holds
+a vector of buildings at `+0x70`…`+0x78` whose first entry is the building —
+take whichever end does not lead back where you started, which is how both
+`0x1B8EE0` and `0x1BB700` open.
+
+Built by the `$STORAGE*` parser at rva `0xE40F0`, which writes `+0x8C` and
+`+0x90` from its arguments and pushes one slot per resource whose per-class
+factor at `resourceRecord + 0xCC + class*0x20` is non-zero. **That factor is why
+a storage declared with the wrong transport class reports zero capacity.** A
+companion byte at `resourceRecord + 0xE8 + class*0x20` excludes the pair
+outright. `+0x88` records which `$STORAGE_*` token produced the storage: `-1`
+plain, 0 basic, 1 medium, 2 advanced and mediumadvanced, 3 hotel, 10 carplant,
+50 fuel — and for the `$STORAGE_DEMAND_*` family the four shop goods are named
+in the code rather than looked up, which is the subject of
+[11-needs.md](11-needs.md).
+
+Classes that matter here: **9 `RESOURCE_TRANSPORT_ELETRIC`**, **14
+`RESOURCE_TRANSPORT_HEATING`**. Both come from
+`media_soviet/scripts/SOVIETInstructions.txt`, which also gives every
+`BUILDINGTYPE_*` number: 17 powerplant, 18 substation, 19 transformator, 31/32
+electricity export/import, 70 heating plant, 71 heating substation, 72 heating
+switch.
+
+### Moving it
+
+| RVA | What |
+|---|---|
+| `0x139A80` | the building dispatcher. Collects power plants (17) and transformers (19) into vectors of their own, and heating plants (70) into another |
+| `0x1B8EE0` | `(game, building)` — the power plant's: walk the wires, collect every reachable class-9 storage, hand energy over |
+| `0x1BB700` | `(game, building, what, priority)` — the grid node's, and the one a transformer uses. `what` = 0 hands out **voltage** (slot quality) and no energy, 1 hands out energy; `priority` is matched against `building+0xE22+connIndex`, and only a filtered call reaches a neighbour flagged unpowered at `+0x1130` |
+| `0x1BDD40` | the transfer, reached by both. Receiver's share is `(capacity − content)/shortfall`; the source may give at most `dt × its own capacity × scale`. **Its sixth argument gates the whole transfer**: non-zero runs only the tail, which propagates quality |
+| `0x1B9640` | the substation's version, over the buildings in range at `building+0x10C8` rather than over wires |
+| `0x1BD4C0` | one grid node's update — computes voltage as `2 × wattage/breaker` for types 17–19 and 35 |
+| `0x1D1E10` | the production tick. Sets slot quality to 1 for a power plant's class-9 storage and a heating plant's class-14 one |
+
+Connections are at `building+0xA10`…`+0xA18`, stride `0x60`, with the connection
+type at `+0x00`: 7 is `ELETRIC_HIGH`, 8 is `ELETRIC_LOW`.
+
+The three floats the script VM exposes as `fEletric_Wattage`, `fEletric_Voltage`
+and `fEletric_CurcuitBreakerCapacity` are reached through **pointers** at
+`building+0x10E0`, `+0x10E8` and `+0x10F8`; `+0x1100` is a plain copy of the
+wattage and `+0x1128` is the voltage dial, eased towards its target by
+`0x1BD37C` rather than written outright.
+
+`building+0x1130` is **"the solver did not reach this node"**. One writer,
+`0x13B02E` inside the dispatcher, which sets it on every grid node its walk out
+from the power plants missed; two readers, that same solver on the next tick and
+`0x1BB9BD` inside `0x1BB700`, which refuses to hand energy to a neighbour
+carrying it. Anything that means to act as a source without a plant behind it
+has to clear this for itself — see [10-accumulator.md](10-accumulator.md).
+
+**Building type is checked in exactly one place in the transfer path**, and only
+to keep power plants and electricity importers out of the receiver list
+(`type != 17 && type != 31`). Everything else about the path is generic, which is
+what makes a battery possible without new engine machinery — see
+[10-accumulator.md](10-accumulator.md).
+
+### The building vector
+
+`game+0x11B08`…`+0x11B10`, an array of `Building*`. The dispatcher's own
+argument is the game object, and it walks this several times per tick. A
+building is finished when `+0x604 >= 1.0` and going away when `+0xEA8` is
+non-zero — both are the dispatcher's own tests.
+
+## Citizens
+
+### The person
+
+`operator new(0x750)` inside the constructor at rva `0x823290`, which
+randomises every status float in one run. Live people are a global array of
+`Person*` at `0x9E75B8`…`0x9E75C0`, stride 8.
+
+| Offset | Contents |
+|---|---|
+| `+0x20` | the building the person is in |
+| `+0x70` | age; `0x8368B0` turns it into the eight-step factor every demand is scaled by |
+| `+0xC8` | non-zero suppresses every service demand — a foreign worker or a tourist |
+| `+0xD8` | **eleven status floats**, in exactly the order the script VM lists them: happiness, food, health, soviet, alcohol, culture, sport, religion, clothing, electronic, crime |
+| `+0x110` | demand count |
+| `+0x118` | **demand array**, stride `0x80`, capacity **7** |
+| `+0x4F0` | unsatisfied-demand count, capped at 10, then entries at `+0x4F8` of `{ float amount, int kind, Resource* }` |
+| `+0x71C` | 0 citizen, 1 soviet tourist, 2 western tourist |
+| `+0x734` | money spent, in the currency `+0x71C` picks |
+
+One demand, `0x80` bytes: `+0x00` amount still wanted, `+0x04` amount in total,
+`+0x08` kind (`0xF` while being built, **1 and 2 are the two a shop serves**),
+`+0x10` the `Resource*`, then two `0x34`-byte targets at `+0x18` and `+0x4C`.
+
+The capacity is arithmetic rather than a declared bound: `(0x4F0 - 0x118) /
+0x80 == 7`, and an eighth entry would run over the unsatisfied count. Nothing
+in the game bounds-checks the append, and nothing has to — a food demand is
+kind 1 and the planner clears every "wants a service" flag when it sees one, so
+a hungry citizen carries four demands and a fed one at most seven.
+
+### The daily plan
+
+```
+rva 0x836960   FUN_140836960(game, person)   ~15 KB
+```
+
+Reached from `0x830640` when a person is at home. Copies whatever the old list
+had left over into `+0x4F0`, decays the statuses, resets `+0x110` to zero at
+`0x836F8B`, and rebuilds through **nine** conditional append sites: food
+`0x837757`, meat `0x837F1B`, clothes `0x838573`, electronics `0x838C71`, then
+five resourceless service demands at `0x8392BD`, `0x8396A6`, `0x839A1A`,
+`0x839D8A` and `0x83A1D3`. The four goods are `ResourceGet` calls on literals
+at `0x8FEC70`…`0x8FEC88` — there is no table.
+
+Too large for the decompiler, which dies on it; it was read as disassembly.
+
+### Shopping
+
+```
+rva 0x171DA0   FUN_140171da0(game, building)   building type 3
+```
+
+From the dispatcher at `0x13DE28`. The second half is the sale, and it is
+completely generic: for each customer in `building+0xBD8`…`+0xBE0`, for each of
+their demands of kind 1 or 2, for each storage slot whose resource matches,
+move `min(slot content, demand total × dt)` across and subtract it from both.
+A tourist is additionally charged `resource+0x64` RUB or `resource+0x60` USD.
+
+**Nothing in that path knows what food is**, which is what makes a fifth
+citizen need reachable without a code patch — see
+[11-needs.md](11-needs.md).
+
+## Walking and parking connections
+
+A building carries the list of buildings reachable from it on foot, and a second
+one for buildings reachable by personal car. The script API names the first:
+`nWalkingBuildingNum`, with `Building_WalkingBuilding_GetID`/`GetDistance`.
+
+| Building offset | Contents |
+|---|---|
+| `+0xCA8`…`+0xCB0` | `std::vector<WalkingConnection>`, stride `0xF0` |
+| `+0xCC0` | the same vector for parking / personal cars |
+
+| Connection offset | Contents |
+|---|---|
+| `+0x08` | the building at the other end |
+| `+0x98` | the path length found, world units |
+
+**Nothing downstream re-checks the distance.** The job, shop and service code
+only asks whether the pair is in the list, so one number decides the whole of
+walking.
+
+| RVA | What |
+|---|---|
+| `0x12E1D0` | **builds** walking connections for a whole set of buildings: clears `+0xCA8` and fills it in again. Called from the save loader |
+| `0x12E6E0` | the same for **one** building. `0x12EC50` drains twenty per call off the queue at `game+0x11F88` — the path a running game takes |
+| `0x12F830` | the same for parking, `+0xCC0`. Drained from a queue at `game+0x11FA0` by `0x12FD90` |
+| `0x43EF10` / `0x43FEA0` | the **overlay** behind the building window's walking-distance button: runs the search a third time and draws the path polylines and metre labels. Does not read `+0xCA8` at all |
+| `0x441890` | the same for one hovered connection, and for a building that is still a blueprint. Uses 125 (`0x90ABE8`) for type `0x69` |
+| `0x12DE30` / `0x12F480` | **collect**: after a road changes, gather the buildings that need rebuilding and hand them to the builders |
+| `0x12DD00` / `0x12F350` / `0x12D9A0` | wrappers around the collectors, called when something is built |
+| `0x430F20` | the save loader — regenerates both when the save predates the last raise |
+
+Builders and collectors both fill in one path-query object and run it.
+**`query+0x3C` is the longest path the search will accept**, read at
+`0x5799B5`, `0x57A278` and `0x57ABFD`, always as
+
+```c
+if (query[0x3C] > 0.0f && node[0x24] > query[0x3C]) return -1.0f;
+```
+
+where `node+0x24` is the length accumulated so far — so a non-positive limit
+means no limit.
+
+**Which of the four fills it in is the difference between the walking distance
+and a rebuild radius**, and it is easy to get wrong:
+
+| Site | Value | Meaning |
+|---|---|---|
+| `0x12E2DD` | **480**, an immediate | the walking distance, batch builder |
+| `0x12E7AF` → `0x90AF38` | **480** | the walking distance, queued builder |
+| `0x43F04A`, `0x43F835` → `0x90AF38` | **480** | the walking distance, overlay |
+| `0x12F926` → `0x90B11C` | **2500** | the personal-car distance |
+| `0x43FFB3` → `0x90B11C` | **2500** | the same, overlay |
+| `0x12DEA7` → `0x90AF70` | 530 | how far from a changed road walking connections are rebuilt |
+| `0x12F502` → `0x90B120` | 2600 | the same for parking |
+
+The collectors' radii are deliberately a little wider than the limits they
+serve, and **the walking distance is written out separately in four functions**
+— nothing shares a constant. Patching any strict subset changes either nothing
+observable or only half of it: with the builders patched and the overlay not,
+citizens walk the new distance and the button still draws the old one. See
+[07-pitfalls.md](07-pitfalls.md).
+
+`0x90AF70` has sixty-odd unrelated readers — it is the shared literal pool — so
+that constant must be repointed at the instruction, never overwritten.
+
 ## Building information panels
 
 The window that opens on a building is built by a family of functions in the
@@ -472,6 +695,15 @@ vertex and pixel `DXBC` blobs, whose lengths are at blob `+0x18`.
 | `+0xF18` | `emissivemap` texture |
 
 Building object: mine type at `+0x368`.
+
+`0x9E9C3C` is the **save format version** of the world just loaded — 124 in
+every save this build writes, and the value a dozen migration steps in
+`0x430F20` compare against. `0x9E9C50` is a byte set at `0x431070` from the
+terrain name: one value for `dlc2/terrains_new/terrain_siberia` and
+`terrain_jungle`, the other for every other map.
+
+`0x9E6A18`…`0x9E6A20` and `0x9E69F0`…`0x9E69F8` are two `vector<Building*>` the
+loader's migration steps walk.
 
 ## Engine texture vtable
 
@@ -646,6 +878,10 @@ the decompiler.
 | `0x90A9B8` / `0x90ABFC` / `0x90ADD0` | 30 / 130 / 250 | gravel, oil, wood radius |
 | `0x90AC9C` / `0x90AC38` | 170 / 25 | water, water surface radius |
 | `0x909E6C` | 0.7 | how close another mine has to be to claim a sample point |
+| `0x90AF38` | 480 | longest walking path, as the queued builder reads it — **31 unrelated readers** |
+| `0x90B11C` | 2500 | longest personal-car path — the real limit |
+| `0x90AF70` | 530 | radius walking connections are rebuilt in — **and sixty-odd unrelated readers** |
+| `0x90B120` | 2600 | the same for parking; one reader |
 | `0x9D4EE0` | — | the `C3D_TIMER` the whole simulation steps on, inline in `.data` |
 
 ## State

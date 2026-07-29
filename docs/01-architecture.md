@@ -65,6 +65,14 @@ The replacement string is placed by `AllocNear`, because a `rip`-relative
 displacement is 32 bits and the loader's own image is not guaranteed to be
 within ±2 GB of the executable.
 
+The `walking` plugin is the second case, and it shows why the operand rather
+than the constant: its rebuild radius is `530.0f` at `0x90AF70`, in the shared
+literal pool with sixty-odd unrelated readers. Writing over it would move panel
+widths as well; repointing the one `movss` that fills in the path query moves
+exactly walking. The walking distance itself, in the same plugin, is a bare
+`imm32` with nothing to share and is simply replaced — see
+[12-walking.md](12-walking.md).
+
 ### 4. Spliced code — last resort
 
 Only when a decision is compiled into a chain of comparisons and there is no
@@ -122,8 +130,12 @@ relocates the prologue into a trampoline, writes `jmp qword ptr [rip+0]` over
 it, and compares the site against the caller's expected bytes first so a game
 update makes a hook refuse rather than corrupt the process — and the plugins use
 it: `ResourceGet` (1), the minimap (2), the terrain editor (4), the mine tick
-(1). All eight are additive: the original runs through the trampoline and the
-plugin's work is appended.
+(1), the building dispatcher and the production tick (2).
+
+Nine of the ten are additive — the original runs through the trampoline and the
+plugin's work is appended. The exception is `accumulator`'s hook on the
+production tick, which exists to **suppress** the original for one building for
+the length of one call; see [10-accumulator.md](10-accumulator.md).
 
 ### Virtual table
 
@@ -156,13 +168,16 @@ exactly as easily as the loader can. What it buys is that a feature can be
 written, rebuilt and removed without touching this file, and that shipping one
 is copying a DLL.
 
-Three ship with the project:
+Six ship with the project:
 
 | Plugin | What | Doc |
 |---|---|---|
 | `resources` | resources the base game does not have | [04](04-adding-resources.md) |
 | `deposits` | deposit types, the minimap layer, the editor brush | [05](05-deposits.md) |
 | `depletion` | deposits that run out | [08](08-depletion.md) |
+| `accumulator` | batteries for the electric grid | [10](10-accumulator.md) |
+| `needs` | resources the citizens buy in a shop | [11](11-needs.md) |
+| `walking` | how far a citizen walks | [12](12-walking.md) |
 
 Plugins load **last**, after every import swap, so each sees a fully built
 loader. `plugins = 0` skips the folder.
@@ -202,16 +217,29 @@ everything a feature needs lives in that plugin's own ini.
 | `menu_patch` | append `menu_tag` to the main menu's version line |
 | `menu_tag` | what to append; ASCII, empty leaves the line alone |
 
-Per plugin, beside its DLL:
+**One file per plugin, beside its DLL, and it holds everything that plugin
+needs** — both its wiring and whatever content it declares:
 
 | File | Holds |
 |---|---|
 | `pluginsesources.ini` | the ResourceGet hook mode and the three RVAs it needs |
 | `plugins\deposits.ini` | which of the three deposit subsystems may touch the game |
 | `plugins\depletion.ini` | whether deposits run out, and how fast |
+| `plugins\accumulator.ini` | what counts as a battery, and how fast it charges |
+| `plugins\needs.ini` | what the citizens buy, and which shops stock it |
+| `plugins\walking.ini` | how far a citizen walks, and whether a load rebuilds the connections |
 
-*What* exists is still declared in the loader's own folder — `resources.ini` and
-`deposits.ini` — because those are content, not wiring.
+The first two carry their content in the same file: `[list]` names the
+resources, and every section of `plugins\deposits.ini` that is not `[deposits]`
+is a deposit. Content and wiring used to live apart, in a `resources.ini` and a
+`deposits.ini` in the loader's own folder, from before there were plugins at
+all. They are merged now, because "where is this feature configured" should have
+one answer per feature, and deleting a plugin should not leave a stray file
+behind.
+
+Those two content sections are parsed by their own plugin rather than through
+the profile API, so display names and comments may hold anything UTF-8; every
+settings section goes through `configString` and stays ASCII.
 
 Every one of these is UTF-8 **without a BOM** and read through the ANSI profile
 API. Writing one back with PowerShell's `-Encoding UTF8` adds a BOM, the section

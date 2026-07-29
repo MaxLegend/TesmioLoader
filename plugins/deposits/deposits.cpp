@@ -138,13 +138,13 @@ static bool KeyIs(const char* line, const char* want) { return _stricmp(line, wa
 static void LoadDepositRegistry()
 {
     char path[MAX_PATH];
-    _snprintf_s(path, sizeof(path), _TRUNCATE, "%s\\deposits.ini", g_baseDir);
+    _snprintf_s(path, sizeof(path), _TRUNCATE, "%s\\plugins\\deposits.ini", g_baseDir);
 
     HANDLE h = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ, NULL,
                            OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
     if (h == INVALID_HANDLE_VALUE)
     {
-        Logf("deposits  no deposits.ini - no mod deposit types");
+        Logf("deposits  no plugins\\deposits.ini - no mod deposit types");
         return;
     }
 
@@ -167,6 +167,11 @@ static void LoadDepositRegistry()
             char* end = strchr(line, ']');
             if (!end) continue;
             *end = 0;
+
+            // [deposits] is the plugin's own settings; every other section is a
+            // deposit. They share a file so a feature is one file, and the name
+            // of the plugin is the one name a deposit may not have.
+            if (_stricmp(line + 1, "deposits") == 0) continue;
 
             if (g_depCount >= MAX_DEPOSITS)
             {

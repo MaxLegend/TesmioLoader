@@ -42,8 +42,6 @@ for /d %%P in (plugins\*) do (
 )
 
 copy /y tesmioloader.ini build\tesmioloader.ini >nul
-if exist resources.ini copy /y resources.ini build\resources.ini >nul
-if exist deposits.ini copy /y deposits.ini build\deposits.ini >nul
 if not exist build\vfs mklink /J build\vfs vfs >nul 2>&1
 
 echo [build] ok -^> build\tesmiolauncher.exe

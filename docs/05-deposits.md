@@ -7,10 +7,11 @@ adding one is the only thing in this project that required patching code.
 `build/plugins/deposits.dll`, and deleting that DLL removes mod deposits — and
 with them the registry other plugins read. See [09-plugins.md](09-plugins.md).
 
-Nothing about any individual deposit is compiled in. `deposits.ini`, in the
-loader's own folder, declares them and one registry drives all three subsystems
-— the code patch, the minimap layer and the editor brush. **Adding a deposit is
-adding a section**; see [Adding one](#adding-one) below. `plugins/deposits.ini`
+Nothing about any individual deposit is compiled in. `plugins/deposits.ini`
+declares them — every section of it except `[deposits]` is a deposit — and one
+registry drives all three subsystems: the code patch, the minimap layer and the
+editor brush. **Adding a deposit is adding a section**; see
+[Adding one](#adding-one) below. `[deposits]` itself
 holds only the three switches that say which of those subsystems may touch the
 game.
 
@@ -95,11 +96,11 @@ the one subsystem that emits instructions rather than swapping a pointer.
 
 ## Adding one
 
-1. **Register the resource** it produces in `resources.ini`, if it needs one —
-   see [04-adding-resources.md](04-adding-resources.md). The minimap button
-   takes its icon straight out of that record.
+1. **Register the resource** it produces in `plugins/resources.ini`, if it needs
+   one — see [04-adding-resources.md](04-adding-resources.md). The minimap
+   button takes its icon straight out of that record.
 
-2. **Add a section to `deposits.ini`.** Every key is documented in the file
+2. **Add a section to `plugins/deposits.ini`.** Every key is documented in the file
    itself; the shape is
 
    ```ini

@@ -29,6 +29,12 @@
 #define SYM_MESH_MTL    "?LoadMaterial@C3D_MESH@@QEAAHPEBDH@Z"
 #define SYM_GET_STRING  "?GetString@C3D_LANGUAGE@@QEAAPEA_WH@Z"
 
+// Asked before any of the three above is called with a path. The import slot
+// already carries the loader's own VFS-aware hook, so a file that exists only
+// under tesmioloader\vfs answers yes. Paths are relative to media_soviet, the
+// same form CreateManagedMesh takes.
+#define SYM_FILE_EXISTS "?C3DHelp_CheckIfFileExist@@YA_NPEBD_N1@Z"
+
 // C3D_MIDDLEPOINT, the object every managed asset is created through.
 #define P_MIDDLEPOINT   0x9EACD0
 
@@ -165,13 +171,13 @@ static int      g_regCount;
 static void LoadResourceRegistry()
 {
     char path[MAX_PATH];
-    _snprintf_s(path, sizeof(path), _TRUNCATE, "%s\\resources.ini", g_baseDir);
+    _snprintf_s(path, sizeof(path), _TRUNCATE, "%s\\plugins\\resources.ini", g_baseDir);
 
     HANDLE h = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ, NULL,
                            OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
     if (h == INVALID_HANDLE_VALUE)
     {
-        Logf("registry  no resources.ini - nothing to inject");
+        Logf("registry  no plugins\\resources.ini - nothing to inject");
         return;
     }
 
@@ -187,7 +193,10 @@ static void LoadResourceRegistry()
     {
         Trim(line);
         if (!line[0] || line[0] == ';' || line[0] == '#') continue;
-        if (line[0] == '[') { inSection = _strnicmp(line, "[resources]", 11) == 0; continue; }
+        // [list] is the content, [resources] is the plugin's own settings, and
+        // they share a file so a feature is one file. Any other section is
+        // somebody else's and is skipped.
+        if (line[0] == '[') { inSection = _strnicmp(line, "[list]", 6) == 0; continue; }
         if (!inSection || g_regCount >= 32) continue;
 
         char* eq = strchr(line, '=');
@@ -398,24 +407,46 @@ static bool RelocateResourceArray(ResVector* vec, int live, int newCap)
 typedef void* (*t_CreateManagedMesh)(void*, const char*);
 typedef int   (*t_MeshLoadFromFile)(void*, const char*, void*, bool);
 typedef int   (*t_MeshLoadMaterial)(void*, const char*, int);
+typedef bool  (__cdecl* t_FileExists)(const char*, bool, bool);
 
 static t_CreateManagedMesh o_CreateManagedMesh;
 static t_MeshLoadFromFile  o_MeshLoadFromFile;
 static t_MeshLoadMaterial  o_MeshLoadMaterial;
+static t_FileExists        o_FileExists;
+
+// The engine's own helper, with the argument pair every caller in the game
+// passes. Missing it is not fatal - it only means the asset check falls back to
+// "assume it is there", which is what this plugin did before.
+static bool AssetExists(const char* path)
+{
+    return o_FileExists ? o_FileExists(path, false, true) : true;
+}
 
 // Exactly the three calls the engine's own table makes, in the same order.
 // CreateManagedMesh caches by path, so asking twice for the same file is free
 // and re-arming after a map load does not leak a mesh per load.
+// **The existence check is not an optimisation, it is the whole safety of this
+// function.** Handing CreateManagedMesh a path that is not there leaves an
+// empty mesh - node array null, node count non-zero - registered in the
+// middlepoint's cache, and LoadMaterial on it faults inside
+// C3D_MIDDLEPOINT::CreateManagedMaterial. Catching that fault is not enough:
+// the engine has already been damaged, and the game dies on the first frame it
+// renders, in C3D_MESH::Render, twenty seconds and a whole world load later.
+// One resource declared in [list] with no files on disk cost exactly that. See
+// docs/07-pitfalls.md.
 static void* LoadResourceMesh(const char* nmf, const char* mtl)
 {
     if (!o_CreateManagedMesh || !o_MeshLoadFromFile) return NULL;
+    if (!AssetExists(nmf)) return NULL;
 
     void* mp   = g_exeBase + P_MIDDLEPOINT;
     void* mesh = o_CreateManagedMesh(mp, nmf);
     if (!mesh) return NULL;
 
-    o_MeshLoadFromFile(mesh, nmf, mp, true);
-    if (o_MeshLoadMaterial && mtl) o_MeshLoadMaterial(mesh, mtl, 0);
+    // A mesh that failed to load is the same empty object, so the material is
+    // only asked for once there is geometry to put it on.
+    if (!o_MeshLoadFromFile(mesh, nmf, mp, true)) return NULL;
+    if (o_MeshLoadMaterial && mtl && AssetExists(mtl)) o_MeshLoadMaterial(mesh, mtl, 0);
     return mesh;
 }
 
@@ -430,7 +461,7 @@ static void* LoadResourceMesh(const char* nmf, const char* mtl)
 // but drawable; the alternative is a null the engine dereferences.
 static void AttachResourceMeshes(BYTE* rec, const char* name)
 {
-    bool bulk = false;
+    bool bulk = false, open = false;
     for (int i = 0; i < RES_MESH_STAGES; i++)
         if (*(void**)(rec + RES_MESH_STAGE1 + i * 8)) bulk = true;
 
@@ -453,12 +484,30 @@ static void AttachResourceMeshes(BYTE* rec, const char* name)
     }
     else if (*(void**)(rec + RES_MESH_VEHICLE))
     {
+        open = true;
         _snprintf_s(nmf, sizeof(nmf), _TRUNCATE, "resources/%s.nmf", name);
         if (void* m = LoadResourceMesh(nmf, mtl)) { *(void**)(rec + RES_MESH_VEHICLE) = m; done++; }
     }
 
+    // A template with all five slots null has no cargo geometry of its own -
+    // food, clothes, eletronics and everything else that travels covered are
+    // like that, and only their icon is ever drawn. A clone of one of those is
+    // finished the moment it has an icon, so this is not something to warn
+    // about; the warning is for a template that *did* have meshes and files
+    // that are not there to replace them.
+    if (!bulk && !open)
+    {
+        Logf("resource  \"%s\" has no cargo geometry, like its template - "
+             "media_soviet/resources/%s.png is the only asset it needs", name, name);
+        return;
+    }
+
     Logf("resource  \"%s\" cargo meshes: %d of %s replaced", name, done,
          bulk ? "5 (bulk)" : "1 (open)");
+    if (done == 0)
+        Logf("resource  WARN  \"%s\" has no cargo geometry under media_soviet/resources - "
+             "it will be drawn as its template. Add %s.nmf and %s.mtl, or drop it from [list]",
+             name, name, name);
 }
 
 // The vector at the known rva is the authority on the current array: its begin
@@ -617,6 +666,19 @@ static void EnsureArmed()
         __except (EXCEPTION_EXECUTE_HANDLER)
         {
             Logf("resource  \"%s\": cargo mesh load faulted - keeping the template's", e.name);
+        }
+
+        // The icon is the one asset the engine finds by name, in a UI pass of
+        // its own at 0x2960DE, and the one this plugin therefore cannot supply
+        // a fallback for. Saying so here is worth a line: a resource with no
+        // icon looks like a resource that did not publish.
+        {
+            char png[MAX_PATH];
+            _snprintf_s(png, sizeof(png), _TRUNCATE, "resources/%s.png", e.name);
+            if (!AssetExists(png))
+                Logf("resource  WARN  \"%s\" has no icon - put a 48x48 RGBA PNG at "
+                     "media_soviet/%s (tesmioloader\\vfs\\media_soviet\\resources\\%s.png)",
+                     e.name, png, e.name);
         }
 
         VirtualProtect(rec, RES_STRIDE, prot, &prot);
@@ -786,6 +848,10 @@ extern "C" __declspec(dllexport) int TsmPluginInit(const TsmHost* host, TsmPlugi
     if (void** s = FindIatSlot(g_exe, DLL_ENGINE, SYM_CREATE_MESH)) o_CreateManagedMesh = (t_CreateManagedMesh)*s;
     if (void** s = FindIatSlot(g_exe, DLL_ENGINE, SYM_MESH_LOAD))   o_MeshLoadFromFile  = (t_MeshLoadFromFile)*s;
     if (void** s = FindIatSlot(g_exe, DLL_ENGINE, SYM_MESH_MTL))    o_MeshLoadMaterial  = (t_MeshLoadMaterial)*s;
+    if (void** s = FindIatSlot(g_exe, DLL_ENGINE, SYM_FILE_EXISTS)) o_FileExists        = (t_FileExists)*s;
+    if (!o_FileExists)
+        Logf("resource  WARN  no import slot for C3DHelp_CheckIfFileExist - a mod resource with "
+             "no assets will fault the engine instead of being skipped");
     if (!o_CreateManagedMesh || !o_MeshLoadFromFile)
         Logf("resource  WARN  no import slot for the mesh loader - mod resources keep the template's cargo models");
 

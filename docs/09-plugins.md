@@ -31,6 +31,9 @@ started with:
 | `resources` | resources the base game does not have. Hooks `ResourceGet`, publishes records into the engine's own vector | [04](04-adding-resources.md) |
 | `deposits` | deposit types: the code patch, the minimap layer, the editor brush | [05](05-deposits.md) |
 | `depletion` | deposits that run out | [08](08-depletion.md) |
+| `accumulator` | batteries for the electric grid | [10](10-accumulator.md) |
+| `needs` | resources the citizens buy in a shop | [11](11-needs.md) |
+| `walking` | how far a citizen walks | [12](12-walking.md) |
 
 The split is not about safety. A plugin is in the same address space and can
 corrupt the process exactly as easily as the loader can — there is no sandbox
@@ -46,6 +49,12 @@ plugins/
     yourthing.cpp        required, and the folder name decides the DLL name
     yourthing.ini        optional, copied next to the DLL
 ```
+
+**One ini per plugin, and it holds everything that plugin needs** — settings in
+a `[yourthing]` section, and whatever content it declares in sections of its
+own. `resources` and `deposits` both do this: `[list]` and `[copper]` sit in the
+same file as the switches that drive them. There is nothing in the loader's own
+folder for a plugin to read, and deleting a DLL leaves no stray file behind.
 
 `build.bat` compiles every `plugins/<name>/<name>.cpp` into
 `build/plugins/<name>.dll` and copies `<name>.ini` beside it.
@@ -163,7 +172,7 @@ include:
 
 ### Per-deposit settings
 
-`TsmDepositApi::setting(i, key)` returns any key of a `deposits.ini` section the
+`TsmDepositApi::setting(i, key)` returns any key of a `plugins\deposits.ini` section the
 deposits plugin itself does not understand. It keeps up to eight per section
 verbatim and has no opinion on what they mean, so another plugin carries its own
 settings in the same file the deposit is declared in:

@@ -1,13 +1,24 @@
 # Adding a resource
 
+> **How many fit.** The engine allocates 63 records and fills 57, so **six mod
+> resources fit without moving anything**. Past that, `resource_capacity` in
+> `plugins/resources.ini` makes the plugin reallocate the vector the way
+> `reserve()` would — a bigger block from the process heap, the records copied
+> in, the vector's three pointers repointed, the old block deliberately left
+> allocated (`RelocateResourceArray`). That path is written and **has never been
+> exercised**, and the caveat beside it now has a worked example behind it: the
+> resource vector is not the only thing sized against the base game's fixed set.
+> See the purchase bucket in [07-pitfalls.md](07-pitfalls.md), which a modded
+> good walked into the first time one was ever bought.
+
 A resource that does not exist in the base game, usable in `$PRODUCTION`,
 `$CONSUMPTION` and `$STORAGE` lines exactly like a stock one.
 
 **A plugin**: `plugins/resources/resources.cpp` builds to
 `build/plugins/resources.dll`, and deleting that DLL removes mod resources
-entirely. What exists is still declared in `resources.ini` in the loader's own
-folder — that is content; `plugins/resources.ini` holds the wiring (the hook
-mode and the three RVAs). See [09-plugins.md](09-plugins.md).
+entirely. Everything it reads is in `build/plugins/resources.ini`: `[list]` is
+what exists, `[resources]` is the wiring — the hook mode and the three RVAs. See
+[09-plugins.md](09-plugins.md).
 
 ## How it works
 
@@ -46,13 +57,15 @@ version looked like from the outside.
 
 ### 1. Register it
 
-`tesmioloader/resources.ini`, UTF-8, no BOM:
+`plugins/resources/resources.ini`, section `[list]`, UTF-8, no BOM:
 
 ```ini
-[resources]
+[list]
 copper_ore         = rawiron, Copper Ore
 copper_concentrate = bauxite, Copper Ore Concentrate
 ```
+
+The plugin's own settings live in `[resources]`, further down the same file.
 
 `<name> = [<slot>,] <template>[, <caption>]`
 
@@ -195,8 +208,8 @@ Symptoms and causes:
 
 | Symptom | Cause |
 |---|---|
-| no `registry` lines at all | `resources.ini` not found, or `resourcehook` is not 2 — check the .ini has no BOM |
-| `slot N unusable (M live…)` | wrong slot number in `resources.ini` |
+| no `registry` lines at all | `plugins\resources.ini` not found, its `[list]` section is missing, or `hook` is not 2 — check the .ini has no BOM |
+| `slot N unusable (M live…)` | wrong slot number in `[list]` |
 | storage shows `0.00 of 0.00 t` | transport class mismatch between storage and template |
 | caption is the template's | no caption given, or `GetString` hook failed to install |
 | icon is a random image | icon file missing, or the VFS did not serve it — check for `vfs fopen` in the log |
