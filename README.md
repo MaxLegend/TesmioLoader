@@ -12,7 +12,7 @@ I'm pleased to present my custom loader for the game WRSR. It allows you to trul
 The mod will require manual installation: copy the folder to the game root directory, next to media_soviet. After that, open the folder and run the loader — tesmiolauncher.exe. Steam must also be running — the launcher simply runs the same SOVIET64.exe, injecting my tesmioloader.dll library, which contains the patching code. 
 The modification works on the principle of hooks — the executable binary is patched during the game's loading process. When launching the game normally through Steam, the unmodified version runs. 
 
-*Update! - v. a0.2.2*
+*Update! - v. b0.3*
 The launcher now has a window. It shows where it found the game, with a Browse button if it got it wrong, and a checkbox for every plugin — untick one and it stays on disk but is not loaded, so you can turn a feature off without deleting anything. Your choice is remembered.
 
 You no longer have to put the folder in exactly the right place. The launcher looks for SOVIET64.exe next to itself, then in the folders above it and one level inside each of those, and finally through Steam's own library list — so it finds the game even if the folder ended up on your desktop. Putting it in the game root is still the tidiest option.
