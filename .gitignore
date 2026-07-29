@@ -2,3 +2,5 @@
 ghidra/proj/
 build/
 tools/
+btfconvert/btfconvert.exe
+btfconvert/obj/
