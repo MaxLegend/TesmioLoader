@@ -49,6 +49,8 @@ int wmain(int argc, wchar_t** argv)
         }
     }
 
+    bool gameSpecified = game[0] != 0;
+
     // Defaults assume this project lives in <game>\tesmioloader\build\.
     if (!game[0]) swprintf_s(game, MAX_PATH, L"%s\\..\\..\\SOVIET64.exe", selfDir);
     if (!dll[0])  swprintf_s(dll,  MAX_PATH, L"%s\\tesmioloader.dll", selfDir);
@@ -56,6 +58,17 @@ int wmain(int argc, wchar_t** argv)
     wchar_t gameFull[MAX_PATH], dllFull[MAX_PATH];
     if (!GetFullPathNameW(game, MAX_PATH, gameFull, NULL)) { Fail(L"GetFullPathName(game)"); return 1; }
     if (!GetFullPathNameW(dll,  MAX_PATH, dllFull,  NULL)) { Fail(L"GetFullPathName(dll)");  return 1; }
+
+    if (!gameSpecified && !Exists(gameFull))
+    {
+        wchar_t currentGame[MAX_PATH];
+        if (!GetFullPathNameW(L"SOVIET64.exe", MAX_PATH, currentGame, NULL))
+        {
+            Fail(L"GetFullPathName(current game)");
+            return 1;
+        }
+        if (Exists(currentGame)) wcscpy_s(gameFull, MAX_PATH, currentGame);
+    }
 
     if (!Exists(gameFull)) { fwprintf(stderr, L"[tesmiolauncher] game not found: %s\n", gameFull); return 1; }
     if (!Exists(dllFull))  { fwprintf(stderr, L"[tesmiolauncher] dll not found: %s\n",  dllFull);  return 1; }
