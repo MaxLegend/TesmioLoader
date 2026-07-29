@@ -14,7 +14,7 @@ if not exist build mkdir build
 echo [build] tesmioloader.dll
 cl /nologo /O2 /MT /W3 /EHsc /LD ^
    /Fo"build\\" /Fd"build\\" /Fe"build\tesmioloader.dll" ^
-   src\tesmioloader.cpp /link kernel32.lib
+   src\tesmioloader.cpp src\tesmioloader.def /link kernel32.lib /NOIMPLIB /NOEXP
 if errorlevel 1 ( echo [build] tesmioloader.dll FAILED & exit /b 1 )
 
 echo [build] tesmiolauncher.exe

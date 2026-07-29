@@ -1600,10 +1600,44 @@ static void Init()
     Logf("--- hooks installed ---");
 }
 
+typedef HRESULT(WINAPI *PFN_DirectInput8Create)(HINSTANCE, DWORD, REFIID, LPVOID *, LPVOID punkOuter);
+static PFN_DirectInput8Create _Proxy_DirectInput8Create;
+
+static bool BindDLLProxy(HMODULE self)
+{
+    char buffer[2048];
+
+    // Don't do anything if we aren't maskerading as dinput8.dll.
+    GetModuleFileNameA(self, buffer, sizeof(buffer));
+    _strupr_s(buffer);
+    if (strstr(buffer, "DINPUT8.DLL") == NULL) return true; // Loaded by the launcher, don't proxy.
+
+    // Check EXE file.
+    GetModuleFileNameA(NULL, buffer, sizeof(buffer));
+    if (strstr(buffer, "SOVIET64") == NULL) return false; // Not the main game exe.
+
+    // Get windows directory.
+    char orig_dll[2048];
+    snprintf(orig_dll, sizeof(orig_dll), "c:\\windows\\system32\\dinput8.dll");
+
+    if (GetSystemDirectoryA(buffer, sizeof(buffer)) != 0) {
+        snprintf(orig_dll, sizeof(orig_dll), "%s\\dinput8.dll", buffer);
+    }
+
+    HMODULE hMod = LoadLibraryExA(orig_dll, NULL, LOAD_LIBRARY_SEARCH_SYSTEM32);
+    if (hMod == NULL) __fastfail(1);
+
+    _Proxy_DirectInput8Create = (PFN_DirectInput8Create)GetProcAddress(hMod, "DirectInput8Create");
+
+    return true;
+}
+
 BOOL APIENTRY DllMain(HMODULE mod, DWORD reason, LPVOID)
 {
     if (reason == DLL_PROCESS_ATTACH)
     {
+        if (!BindDLLProxy(mod)) return TRUE;
+
         g_self = mod;
         DisableThreadLibraryCalls(mod);
         Init();
@@ -1616,4 +1650,9 @@ BOOL APIENTRY DllMain(HMODULE mod, DWORD reason, LPVOID)
         if (g_hReads != INVALID_HANDLE_VALUE) CloseHandle(g_hReads);
     }
     return TRUE;
+}
+
+extern "C" HRESULT WINAPI _DirectInput8Create(HINSTANCE hInst, DWORD dwVersion, REFIID riidltf, LPVOID *ppvOut, LPVOID punkOuter)
+{
+    return _Proxy_DirectInput8Create(hInst, dwVersion, riidltf, ppvOut, punkOuter);
 }
