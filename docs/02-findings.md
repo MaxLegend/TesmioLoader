@@ -608,6 +608,33 @@ argument is the game object, and it walks this several times per tick. A
 building is finished when `+0x604 >= 1.0` and going away when `+0xEA8` is
 non-zero — both are the dispatcher's own tests.
 
+### The building type descriptor
+
+`building+0x318` is the building's **type**, the thing `building.ini` parsed
+into, and the whole game asks it what kind of building this is:
+
+| Type offset | Contents |
+|---|---|
+| `+0x360` | the `BUILDINGTYPE_*` number — 2 living, 3 shop, 6 factory, 7 mine, 8 field, 17 powerplant, 18 substation, 19 transformer, 30 unknown… |
+| `+0x364` | a second, finer number. Living buildings are told apart by `+0x360 == 2 && +0x364 == 1` |
+| `+0x814` | divisor in the shop's tourist-spending term |
+
+Both are initialised to `0x1E` — 30, `BUILDINGTYPE_UNKNOWN` — at `0x10DFF9`
+and `0x10E003`, in the parser's own state reset, and set from the `$TYPE_*`
+`strcmp` chain inside the parser at `0x10E200`, which writes `parser+0x1E10`.
+`$TYPE_SHOP` is at `0x10EBBD` and each link is eleven instructions:
+`lea rdx,<literal>` / `call 0x84F340` / `test` / `jne next` / `mov eax,<number>`
+/ `mov [rbp+0x1E10],eax` / `jmp done`.
+
+That is the same shape as the deposit-type chain, so a genuinely new `$TYPE_*`
+is the same kind of splice — and the same caveat applies twice over, because
+`0x139A80`, the building dispatcher, decides what a building *does* from
+`+0x360`, and a number it does not know ticks not at all. See
+[13-buildings.md](13-buildings.md).
+
+`media_soviet/scripts/SOVIETInstructions.txt` lists every `BUILDINGTYPE_*` with
+its number and is the authority.
+
 ## Citizens
 
 ### The person
@@ -666,9 +693,38 @@ their demands of kind 1 or 2, for each storage slot whose resource matches,
 move `min(slot content, demand total × dt)` across and subtract it from both.
 A tourist is additionally charged `resource+0x64` RUB or `resource+0x60` USD.
 
+Read from the decompiler rather than inferred, because a whole building hangs
+on it:
+
+```c
+for (customer in building+0xBD8)
+  for (d in customer+0x118, stride 0x80)
+    if ((unsigned)(d.kind - 1) < 2)                      // kind 1 or 2
+      for (s = 0; s < (building+0x978 - building+0x970) / 0xE0; s++)
+        for (slot in storage s, stride 0x10)
+          if (slot.res == d.resource && slot.content > 0 && d.total*dt < d.amount)
+              move it across
+```
+
+The storage loop is **unconditional**: no test on the `$STORAGE_*` token that
+built the storage, none on its transport class, none on the resource. A
+`$TYPE_SHOP` building therefore sells anything sitting in any of its storages,
+including a `$STORAGE_SPECIAL` holding one named good — which is what the pub
+does with alcohol and what makes a single-purpose shop possible with no patch
+at all. See [13-buildings.md](13-buildings.md).
+
 **Nothing in that path knows what food is**, which is what makes a fifth
 citizen need reachable without a code patch — see
 [11-needs.md](11-needs.md).
+
+**What has not been read** is the other half: which building a citizen walks to
+for a given demand. The choice lands in `*(person+0x688) + 0x4F0`, a
+`Building*` that `0x830640` then looks up in the walking-connection list at
+`+0xCA8` before handing it to `0x82D300`; who *fills* it is unknown. The
+demand's two `0x34`-byte targets at `+0x18` and `+0x4C` open with a place-kind —
+1 for food and meat, 9 for clothes and electronics, `0xE` for none — and whether
+a building answers a place-kind by what it stocks or by what it is decides
+whether a shop stocking only a modded good is ever visited.
 
 ## Walking and parking connections
 

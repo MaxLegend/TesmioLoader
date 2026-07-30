@@ -34,6 +34,7 @@ started with:
 | `accumulator` | batteries for the electric grid | [10](10-accumulator.md) |
 | `needs` | resources the citizens buy in a shop | [11](11-needs.md) |
 | `walking` | how far a citizen walks | [12](12-walking.md) |
+| `buildings` | new buildings, written out of a config file | [13](13-buildings.md) |
 
 The split is not about safety. A plugin is in the same address space and can
 corrupt the process exactly as easily as the loader can — there is no sandbox

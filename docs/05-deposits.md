@@ -122,10 +122,30 @@ whichever file exists**, which is why one blank can back any number of them.
 
 ### Saving
 
-An additive inline hook on `0x7C20`, the function that writes `farmap`,
-`emissivemap` and both deposit maps. It takes the folder in `rdx`, so an extra
-map is one more `SaveToDDS` with the same argument. Painting and depletion
-survive a reload for the same reason the vanilla channels do.
+`0x7C20` is the function that writes `farmap`, `emissivemap` and both deposit
+maps. It takes the folder in `rdx`, so an extra map is one more `SaveToDDS` with
+the same argument. Painting and depletion survive a reload for the same reason
+the vanilla channels do.
+
+It is reached by **redirecting the one call to it**, at `0x42CD0E`, rather than
+by splicing its prologue:
+
+```asm
+0042CD0B  49 8B D7           mov rdx,r15      the world folder
+0042CD0E  E8 0D AF BD FF     call 0x7C20      <- the five bytes rewritten
+0042CD13  ...                                 the return address
+```
+
+The rel32 points at a cave next to the executable holding one
+`jmp qword ptr [rip+0]` to the detour, which calls `0x7C20` by address — there is
+no trampoline and no stolen prologue at all. The call site is verified by
+decoding it (`E8`, and the computed target is `0x7C20`), not by a byte compare,
+so the check still holds if the function moves.
+
+This started as an inline hook and **crashed every save**: `0x7C20`'s prologue is
+13 bytes and byte 13 begins `mov rax,[rip+0x98a414]`, the stack-cookie load. The
+14-byte jump cut that instruction in half. Written up in
+[07-pitfalls.md](07-pitfalls.md).
 
 ### Sampling
 
@@ -474,6 +494,12 @@ One global wide buffer the panel draws afterwards, and whoever was hovered last
 owns it. A mod layer writes the same thing from the same three pieces it already
 has — the resource its `icon` names, that record's caption id one field along
 from the texture, and the same `0x2F3` label.
+
+**`GetString` is dereferenced from its import slot at call time, not cached.**
+`resources` swaps that import to answer the private caption ids it mints, and
+plugins load in directory order with `deposits` first — so a pointer read at init
+is the engine's own, the mod id finds nothing, and the tooltip reads
+`Deposits: ` with the name missing. See [07-pitfalls.md](07-pitfalls.md).
 
 ### What the shader actually does
 

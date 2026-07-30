@@ -197,6 +197,20 @@ static bool PatchIat(HMODULE mod, const char* dll, const char* fn,
 static bool InstallInlineHook(void* target, void* detour, void** trampolineOut,
                               const BYTE* expect, size_t stolen, const char* label)
 {
+    // The jump written below is 14 bytes. Fewer stolen bytes than that is not a
+    // tight fit, it is memory corruption: the jump runs past the prologue into
+    // whatever follows, while the trampoline still returns to target+stolen -
+    // which is now the middle of the jump's own address operand. The site then
+    // executes a garbage instruction stream on a code path nobody was watching.
+    // A whole debugging session went into one of these - see docs/07-pitfalls.md
+    // - so it is checked here rather than left to the caller's arithmetic.
+    if (stolen < 14)
+    {
+        Logf("hook FAILED  %-22s %zu bytes stolen, the jump needs 14 - refusing to patch",
+             label, stolen);
+        return false;
+    }
+
     if (memcmp(target, expect, stolen) != 0)
     {
         Logf("hook FAILED  %-22s prologue mismatch - wrong game build, refusing to patch", label);

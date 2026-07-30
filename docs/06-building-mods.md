@@ -1,5 +1,11 @@
 # Building mods
 
+**This is the manual; [13-buildings.md](13-buildings.md) is the machine.** The
+`buildings` plugin does everything below out of one section of
+`plugins/buildings.ini` — the asset copies, the `$TEXTURE_MTL` rewrite, the
+`MATERIALEMISSIVE` decision and the `building.ini` edit. Read this to know what
+it is doing and why; reach for it when the answer is "not what I wanted".
+
 New buildings need no reverse engineering at all. The game's own Workshop format
 handles them, and 1594 of the buildings installed on this machine arrived that
 way. `tesmioloader` is only needed for what those buildings *reference* — a
@@ -19,6 +25,12 @@ ids.
 | 9100000004 | `ElectrolysisPlant` | `aluminium_plant` | `raw_copper` → `copper` |
 | 9100000005 | `StationaryAccumulator` | `eletric_substation` | stores electricity |
 | 9100000006 | `FurnitureFactory` | `clothing_factory` | `boards` + `fabric` → `furniture` |
+| 9100000010 | `Pharmacy` | `shop_clothes` | sells `medicine` |
+| 9100000011 | `PharmaceuticalPlant` | `fabric_factory` | `chemicals` + `plants` → `medicine` |
+
+The last two are **generated**, not hand-built — they exist as sections of
+`plugins/buildings.ini` and the folders are written at startup. See
+[13-buildings.md](13-buildings.md).
 
 Subscribed items live in `A:\SteamLibrary\steamapps\workshop\content\784150\`
 and are read from there directly.

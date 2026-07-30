@@ -184,6 +184,16 @@ update makes a hook refuse rather than corrupt the process — and the plugins u
 it: `ResourceGet` (1), the minimap (2), the terrain editor (4), the mine tick
 (1), the building dispatcher and the production tick (2).
 
+That jump is **14 bytes**, and a prologue shorter than that cannot host it: the
+jump would overrun into the next instruction while the trampoline returned into
+the middle of the jump's own address operand. `installInlineHook` refuses below
+14 rather than trusting the caller's byte count — the one site that got this
+wrong crashed every save and logged `hook ok`, in
+[07-pitfalls.md](07-pitfalls.md). Prologues that begin
+`mov [rsp+8],rbx / push / sub rsp,imm32` are 13 bytes and are followed by a
+rip-relative stack-cookie load, so they cannot be stolen at 13 *or* extended;
+those sites are patched at the call instead.
+
 Nine of the ten are additive — the original runs through the trampoline and the
 plugin's work is appended. The exception is `accumulator`'s hook on the
 production tick, which exists to **suppress** the original for one building for
@@ -230,9 +240,15 @@ Six ship with the project:
 | `accumulator` | batteries for the electric grid | [10](10-accumulator.md) |
 | `needs` | resources the citizens buy in a shop | [11](11-needs.md) |
 | `walking` | how far a citizen walks | [12](12-walking.md) |
+| `buildings` | new buildings, written out of a config file | [13](13-buildings.md) |
 
 Plugins load **last**, after every import swap, so each sees a fully built
 loader. `plugins = 0` skips the folder.
+
+`buildings` is the one that patches nothing at all: it writes a Workshop item
+into `media_soviet\workshop_wip\` from `plugins\buildings.ini` and then does
+nothing for the rest of the process. It is a plugin because it is a feature, not
+because it needs anything from the host but the log and the config reader.
 
 ### Crash reporting
 
@@ -280,6 +296,7 @@ needs** — both its wiring and whatever content it declares:
 | `plugins\accumulator.ini` | what counts as a battery, and how fast it charges |
 | `plugins\needs.ini` | what the citizens buy, and which shops stock it |
 | `plugins\walking.ini` | how far a citizen walks, and whether a load rebuilds the connections |
+| `plugins\buildings.ini` | the buildings that do not exist yet, one section each |
 
 The first two carry their content in the same file: `[list]` names the
 resources, and every section of `plugins\deposits.ini` that is not `[deposits]`

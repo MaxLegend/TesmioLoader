@@ -562,13 +562,32 @@ static const BYTE kMaskOrig[]     = { 0x83, 0xBE, 0x68, 0x03, 0x00, 0x00, 0x03 }
 //
 //   140007C6x  tex->vtbl[36](tex, "<folder>/resourcemap.dds")   SaveToDDS
 //
-// Both are reached without patching code. The load side is an **import swap** on
+// Neither needs a spliced prologue. The load side is an **import swap** on
 // CreateManagedTexture: the world loader hands it "<folder>/resourcemap.dds",
 // which is the one path that always carries the folder - `resourcemap2` falls
 // back to the bare "resourcemap2default.dds" when a map ships without one - so
 // seeing that path is both the signal that a world is loading and the name of
-// the folder it is loading from. The save side is an additive inline hook on
-// 0x7C20, which takes the same folder in RDX.
+// the folder it is loading from.
+//
+// The save side redirects the **one call** that reaches 0x7C20, at 0x42CD0E. It
+// was an inline hook on 0x7C20's prologue until that turned out to crash every
+// save, and the call patch is both the fix and the better technique:
+//
+//   0042CD0B  49 8B D7           mov rdx,r15        the world folder
+//   0042CD0E  E8 0D AF BD FF     call 0x7C20        <- the five bytes rewritten
+//   0042CD13  48 8B 0D ...                          the return address
+//
+// 0x7C20's prologue is exactly 13 bytes, and byte 13 begins a **rip-relative**
+// load of the stack cookie - `mov rax,[rip+0x98a414]`. So it can neither be
+// stolen at 13 (a 14-byte jump overwrites that instruction's first byte, and
+// the trampoline returns straight into the wreckage) nor at 20 (the copy would
+// read the cookie through a displacement measured from the original address).
+// A call site has neither problem: the argument registers are already loaded,
+// the original is called by address with no trampoline at all, and five bytes
+// of rel32 are the whole patch. See docs/07-pitfalls.md.
+//
+// The rel32 only reaches +-2GB, so it lands in a cave allocated next to the
+// executable which holds one absolute jump to the detour.
 //
 // A map with no resourcemapN.dds of its own loads a **blank**, written once into
 // the loader's own VFS. It cannot be the engine's `resourcemap2default.dds`:
@@ -577,6 +596,7 @@ static const BYTE kMaskOrig[]     = { 0x83, 0xBE, 0x68, 0x03, 0x00, 0x00, 0x03 }
 // caches by path, so two extra maps loading one file would be one texture.
 
 #define P_WORLD_SAVE_RVA   0x7C20     // FUN_140007c20(self, folder) - SaveToDDS x4
+#define P_WORLD_SAVE_CALL  0x42CD0E   // the only `call 0x7C20` in the executable
 
 #define TEX_LOAD2D         2          // vtbl+0x10   Load2DFromFile(path,0,0,0,0)
 #define TEX_INIT_TEMP      19         // vtbl+0x98   TextureAccessInitTempResource
@@ -618,11 +638,55 @@ static t_CreateManagedTexture o_CreateManagedTexture;
 static t_FileExists           o_FileExists;
 static t_WorldSaveMaps        o_WorldSaveMaps;
 
-static const BYTE kWorldSavePrologue[] = {
-    0x48, 0x89, 0x5C, 0x24, 0x08,               // mov [rsp+8],rbx
-    0x57,                                       // push rdi
-    0x48, 0x81, 0xEC, 0x30, 0x03, 0x00, 0x00    // sub rsp,0x330
-};
+// Rewrites the rel32 of the one call that reaches the world map saver so it
+// lands in a cave holding an absolute jump to `detour`. Verified by decoding the
+// call rather than by comparing its bytes: what has to be true is that the site
+// is a direct call *to 0x7C20*, and that survives the function moving.
+static bool PatchWorldSaveCall(void* detour)
+{
+    BYTE* site   = g_exeBase + P_WORLD_SAVE_CALL;
+    BYTE* target = g_exeBase + P_WORLD_SAVE_RVA;
+
+    if (!ReadablePtr(site, 5)) { Logf("maps     save call site unreadable"); return false; }
+
+    int rel = 0;
+    memcpy(&rel, site + 1, 4);
+    if (site[0] != 0xE8 || site + 5 + rel != target)
+    {
+        Logf("maps     save call site is not `call %p` - wrong game build, refusing to patch",
+             target);
+        return false;
+    }
+
+    BYTE* cave = AllocNear(g_exeBase, 16);
+    if (!cave) { Logf("maps     no cave within reach of the save call site"); return false; }
+
+    cave[0] = 0xFF; cave[1] = 0x25;                  // jmp qword ptr [rip+0]
+    memset(cave + 2, 0, 4);
+    memcpy(cave + 6, &detour, sizeof(detour));
+
+    int newRel = (int)(cave - (site + 5));
+    if (cave - (site + 5) != (INT_PTR)newRel)
+    {
+        Logf("maps     cave at %p is out of rel32 range of the save call site", cave);
+        return false;
+    }
+
+    DWORD prot = 0;
+    if (!VirtualProtect(site, 5, PAGE_EXECUTE_READWRITE, &prot))
+    {
+        Logf("maps     save call site not writable (%lu)", GetLastError());
+        return false;
+    }
+    memcpy(site + 1, &newRel, 4);
+    VirtualProtect(site, 5, prot, &prot);
+    FlushInstructionCache(GetCurrentProcess(), site, 5);
+
+    o_WorldSaveMaps = (t_WorldSaveMaps)target;       // called by address, no trampoline
+    Logf("patch  world map save  call at %p -> cave %p -> detour %p (original %p)",
+         site, cave, detour, target);
+    return true;
+}
 
 static void* TexVCall(void* tex, int slot)
 {
@@ -868,9 +932,7 @@ static void InstallExtraMaps()
         return;
     }
 
-    if (!InstallInlineHook(g_exeBase + P_WORLD_SAVE_RVA, (void*)h_WorldSaveMaps,
-                           (void**)&o_WorldSaveMaps, kWorldSavePrologue,
-                           sizeof(kWorldSavePrologue), "world map save"))
+    if (!PatchWorldSaveCall((void*)h_WorldSaveMaps))
         Logf("maps     WARN  the save hook did not install - extra maps load but are never "
              "written back, so painting and depletion will not survive a reload");
 
@@ -1367,12 +1429,21 @@ static t_MM_Collision        o_MM_Collision;
 static t_MM_DrawRowOrOverlay o_MM_DrawOverlay;   // trampoline for 0x4BDDE0
 static t_MM_DrawRowOrOverlay o_MM_DrawRow;       // trampoline for 0x4BFEA0
 
-// Not a hook - the address is taken so a mod layer can build the same hover text
-// the vanilla ones do. C3D_LANGUAGE::GetString is already the resources plugin's
-// import hook when that plugin is installed, which is exactly what makes a mod
-// resource's caption resolve here without either plugin knowing the other.
+// Not a hook, and deliberately **the slot rather than what is in it**.
+//
+// C3D_LANGUAGE::GetString is where a mod resource's caption comes from: the
+// `resources` plugin swaps this same import and answers the private ids it mints
+// from 1 000 000 up. But plugins load in directory order, `deposits` comes before
+// `resources`, and reading the slot at init time therefore captured the engine's
+// own GetString - which has nothing at 1 000 000 and returns an empty string.
+// That is the whole of why a mod layer's tooltip read "Deposits: " and stopped.
+//
+// Dereferencing at call time instead makes the order irrelevant: whoever swapped
+// the import last is who answers, which is exactly the property an import swap
+// is supposed to have. Nothing else here caches an import that another plugin
+// might own - this was the only one.
 typedef wchar_t* (*t_MM_GetString)(void*, int);
-static t_MM_GetString o_MM_GetString;
+static void** g_MM_GetStringSlot;
 
 static int g_minimapPatch;
 
@@ -1615,18 +1686,19 @@ static void DrawDepositButton(BYTE* param_1, DepositDef* d)
     // layer's. Written while hovered and left alone otherwise, exactly as the
     // vanilla blocks do - whoever is hovered last owns the buffer, and the panel
     // draws it afterwards.
-    if (hovered && o_MM_GetString && d->icon[0])
+    if (hovered && g_MM_GetStringSlot && d->icon[0])
     {
         t_ResourceGet resourceGet = (t_ResourceGet)(g_exeBase + P_RESOURCEGET);
         BYTE* record = (BYTE*)resourceGet(g_exeBase + G_RES_SELF, (void*)d->icon, NULL, NULL);
         if (ReadablePtr(record, RES_CAPTION_OFF + sizeof(int)))
         {
             typedef void (*t_FormatWide)(void*, size_t, const wchar_t*, ...);
+            t_MM_GetString getString = (t_MM_GetString)*g_MM_GetStringSlot;
             void* lang = g_exeBase + G_LANG;
             ((t_FormatWide)(g_exeBase + P_FORMAT_WIDE))(
                 g_exeBase + G_TOOLTIP_BUF, G_TOOLTIP_CHARS, L"%ls: %ls",
-                o_MM_GetString(lang, TXT_DEPOSIT_LABEL),
-                o_MM_GetString(lang, *(int*)(record + RES_CAPTION_OFF)));
+                getString(lang, TXT_DEPOSIT_LABEL),
+                getString(lang, *(int*)(record + RES_CAPTION_OFF)));
         }
     }
 
@@ -1718,7 +1790,6 @@ static bool ResolveMinimapImports()
         { "?Draw@C3D_PANEL2D@@QEAAXMMMMM_N@Z",               (void**)&o_MM_Draw             },
         { "?GetMouseSolid@C3D_INPUT@@QEAA?AVC3DVECTOR3@@XZ", (void**)&o_MM_GetMouseSolid    },
         { "?Collision@C3D_PANEL2D@@QEAA_NVC3DVECTOR3@@MM@Z", (void**)&o_MM_Collision        },
-        { "?GetString@C3D_LANGUAGE@@QEAAPEA_WH@Z",           (void**)&o_MM_GetString        },
     };
     for (size_t i = 0; i < sizeof(imports) / sizeof(imports[0]); i++)
     {
@@ -1726,6 +1797,12 @@ static bool ResolveMinimapImports()
         if (!slot) { Logf("minimap  FAILED  no import slot for %s", imports[i].sym); return false; }
         *imports[i].slot = *slot;
     }
+
+    // The slot, not its contents - see the note on g_MM_GetStringSlot. Missing
+    // it costs the hover text and nothing else, so it only warns.
+    g_MM_GetStringSlot = FindIatSlot(g_exe, DLL_ENGINE, "?GetString@C3D_LANGUAGE@@QEAAPEA_WH@Z");
+    if (!g_MM_GetStringSlot)
+        Logf("minimap  WARN  no import slot for C3D_LANGUAGE::GetString - layers have no hover text");
     return true;
 }
 

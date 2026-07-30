@@ -18,6 +18,32 @@ The crash that followed looked exactly like a game bug: a building referencing
 Write config files with `[System.IO.File]::WriteAllText` and
 `UTF8Encoding($false)`. Check the first bytes if a setting seems ignored.
 
+## A cached import is not the live import
+
+`deposits` resolved `C3D_LANGUAGE::GetString` at init time — `FindIatSlot`, then
+`*slot` — to build its minimap hover text. `resources` **swaps that same import**,
+because that is how a mod resource's caption is answered: private ids from
+1 000 000 up that the engine's own string table has never heard of.
+
+Plugins load in directory order. `deposits` comes before `resources`. So the
+cached pointer was the engine's own `GetString`, the mod id fell through to the
+real table, and the tooltip read `Deposits: ` and stopped — with **no error
+anywhere**, because an id with no string is not a failure, it is an empty string.
+
+What made it confusing: the *editor's* tooltip for the same deposit was correct.
+That one is built by `0x383BD0`, which calls `GetString` itself, through the
+executable's IAT, at the moment it needs it — so it always gets whatever is in
+the slot now. Two tooltips, one string table, one right and one wrong, and the
+difference was entirely *when the pointer was read*.
+
+- **Dereference the slot at call time when another plugin may own it.** That is
+  the property an import swap is supposed to have, and caching throws it away.
+  `FindIatSlot` returns the slot for exactly this reason; store that, not `*slot`.
+- Caching is still right for an import nobody else touches — which is every other
+  one in this file, and why this was the only site that had to change.
+- **An empty string is a silent failure mode.** Anything that resolves a name to
+  a number to a string can fail at each step and only the last one is visible.
+
 ## One import table is not enough
 
 `C3DDLL64.dll` has its own imports. Hooking only the executable's meant every
@@ -738,3 +764,68 @@ turn Win95 grey.
 
 `/MANIFEST:EMBED` puts it in the binary. Cheap, and the failure it prevents would
 only ever be reported as "looks different on my machine".
+
+## A 13-byte prologue and a 14-byte jump
+
+Saving the game crashed, every time, with an access violation at
+`SOVIET64.exe+0x7C2D` — writing to `FFFFFFFF98A41405`, from a call site at
+`0x42CD13`. Nothing in the loader logged a failure: the hook on `0x7C20` had
+reported
+
+```
+hook ok      world map save         target=00007FF639D57C20 tramp=... (13 bytes stolen)
+```
+
+**Thirteen.** `InstallInlineHook` writes a 14-byte absolute jump
+(`FF 25 00000000` plus an 8-byte address) and copies `stolen` bytes into the
+trampoline. With `stolen = 13` the two numbers disagree, and both halves of the
+disagreement are fatal:
+
+- the jump runs one byte past the prologue, overwriting the first byte of the
+  instruction at `0x7C2D` with the top byte of the detour's address — which for
+  a user-space pointer is `0x00`;
+- the trampoline still returns to `target + 13`, which is now that corrupted
+  byte rather than an instruction boundary.
+
+`0x7C20`'s prologue really is 13 bytes, and what follows is the stack-cookie
+load:
+
+```asm
+00007C20  48 89 5C 24 08           mov [rsp+8],rbx
+00007C25  57                       push rdi
+00007C26  48 81 EC 30 03 00 00     sub rsp,0x330
+00007C2D  48 8B 05 14 A4 98 00     mov rax,[rip+0x98a414]     __security_cookie
+```
+
+`48 8B 05 14 A4 98 00` with its first byte zeroed decodes as
+`add [rbx+0x98A414],cl` — a *write*, through a register holding whatever the
+caller left there. The faulting address in the crash report carries `98A414`
+literally, which is what identified the site in one reading.
+
+Three things generalise:
+
+- **The stolen count is bounded below by the jump, not by the prologue.** The
+  API had said "at least 14" all along; nothing enforced it. The host now
+  refuses and logs rather than writing a jump longer than the space it was
+  given. A contract in a comment is a contract nobody checks.
+- **`hook ok` means the bytes matched, and nothing more.** The prologue compare
+  passed because the prologue was quoted correctly — it just was not long
+  enough. Same failure mode as the walking distance: a clean log line about a
+  patch that corrupts.
+- **A rip-relative instruction cannot be stolen at all**, so extending the
+  prologue to 20 bytes would have replaced one bug with a quieter one: copied to
+  a trampoline, `mov rax,[rip+disp32]` reads `disp32` from its *new* address and
+  loads a cookie from somewhere else entirely. Prologues that begin
+  `mov [rsp+8],rbx / push / sub rsp,imm32` are 13 bytes followed by exactly this
+  instruction in every `/GS` function the game has, so this is the common case,
+  not a curiosity.
+
+The fix is not a bigger prologue but a **call patch**: `0x7C20` has exactly one
+caller, `E8` at `0x42CD0E`, and rewriting that rel32 needs five bytes, steals
+nothing, relocates nothing, and calls the original by address. It is also higher
+on the preference list in CLAUDE.md than spliced code. When an inline hook wants
+an awkward prologue, count the callers first:
+
+```bash
+python tools/pe/xref.py SOVIET64.exe <rva>
+```

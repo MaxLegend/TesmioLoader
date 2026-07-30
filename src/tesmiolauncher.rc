@@ -1,0 +1,17 @@
+// Resources for tesmiolauncher.exe - at the moment, its icon.
+//
+// Windows shows the ICON resource with the **lowest id** as an executable's
+// application icon, so this one is 1 and nothing else here may take a lower
+// number.
+//
+// logo.ico is generated from logo.png and carries ten sizes, because Explorer,
+// the taskbar, Alt-Tab and the title bar each pick a different one and a
+// single-size icon gets scaled badly in at least two of those places:
+//
+//     python -c "from PIL import Image; \
+//       Image.open('logo.png').convert('RGBA').save('logo.ico', format='ICO', \
+//       sizes=[(16,16),(20,20),(24,24),(32,32),(40,40),(48,48),(64,64),(96,96),(128,128),(256,256)])"
+//
+// The path is relative to this file, which is what rc.exe resolves against.
+
+1 ICON "..\\logo.ico"

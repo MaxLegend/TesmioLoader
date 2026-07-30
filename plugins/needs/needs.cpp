@@ -147,6 +147,13 @@
 #define STOR_DEMAND_MEDADV   5         // clothes + eletronics
 #define STOR_DEMAND_HOTEL    10        // food + alcohol + meat
 #define STOR_ANY            (-1)       // "wherever the donor landed"
+// "nowhere - a building.ini already declares the shelf." The donor rule puts
+// the goods in every storage that stocks the donor, which is exactly wrong for
+// a resource meant to be sold in one building of its own: a pharmacy declares
+// $STORAGE_SPECIAL ... medicine itself, and medicine has no business on a
+// department store's shelf. The demand half is untouched by this - the citizen
+// still wants it, and the shop tick still sells it from whatever storage has it.
+#define STOR_NONE           (-2)
 
 #define PR_STATUS           0xD8       // eleven floats; [0] is happiness
 #define PR_DEMAND_N         0x110
@@ -550,6 +557,13 @@ static void ExtendStorage(BYTE* storage, int cls, bool live)
     for (int i = 0; i < g_needCount; i++)
     {
         Need* n = &g_need[i];
+
+        // `none`: the shelf is declared in a building.ini, so no storage
+        // anywhere gets a slot from here. Checked before anything is resolved,
+        // because there is nothing to say about a storage this need has no
+        // opinion on.
+        if (n->category == STOR_NONE) continue;
+
         bool  resolved = ResolveNeed(n);
 
         int donorAt = resolved ? SlotIndexOf(storage, n->donorRec) : -1;
@@ -1282,6 +1296,7 @@ static const struct
 } kCategories[] = {
     { "auto",           STOR_ANY,             NULL                        },
     { "any",            STOR_ANY,             NULL                        },
+    { "none",           STOR_NONE,            NULL                        },
     { "basic",          STOR_DEMAND_BASIC,    "food,meat"                 },
     { "medium",         STOR_DEMAND_MEDIUM,   "food,clothes"              },
     { "advanced",       STOR_DEMAND_ADVANCED, "food,clothes,eletronics"   },
@@ -1312,7 +1327,7 @@ static bool ParseCategory(Need* n, const char* text)
         return true;
     }
 
-    Logf("needs    \"%s\": category \"%s\" is not one of auto, basic, medium, advanced, "
+    Logf("needs    \"%s\": category \"%s\" is not one of auto, none, basic, medium, advanced, "
          "mediumadvanced, hotel - dropped", n->name, text);
     return false;
 }

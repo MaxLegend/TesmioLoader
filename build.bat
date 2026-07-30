@@ -25,10 +25,22 @@ rem /MANIFEST:EMBED because the source declares a MANIFESTDEPENDENCY on
 rem Microsoft.Windows.Common-Controls v6 for themed checkboxes, and link.exe
 rem otherwise leaves it in a tesmiolauncher.exe.manifest beside the exe - which
 rem works only as long as nobody copies the exe on its own.
+rem The application icon, compiled separately and handed to the linker like an
+rem object file. rc.exe ships with the Windows SDK and vcvars64 puts it on PATH;
+rem if it is missing the launcher is still built, just without an icon, because
+rem an icon is not worth failing a build over.
 echo [build] tesmiolauncher.exe
+if exist build\tesmiolauncher.res del build\tesmiolauncher.res
+rc /nologo /fo "build\tesmiolauncher.res" src\tesmiolauncher.rc >nul 2>&1
+if exist build\tesmiolauncher.res (
+    set LAUNCHER_RES=build\tesmiolauncher.res
+) else (
+    set LAUNCHER_RES=
+    echo [build] rc.exe unavailable - launcher built without its icon
+)
 cl /nologo /O2 /MT /W3 /EHsc ^
    /Fo"build\\" /Fd"build\\" /Fe"build\tesmiolauncher.exe" ^
-   src\tesmiolauncher.cpp /link /SUBSYSTEM:WINDOWS /MANIFEST:EMBED kernel32.lib
+   src\tesmiolauncher.cpp %LAUNCHER_RES% /link /SUBSYSTEM:WINDOWS /MANIFEST:EMBED kernel32.lib
 if errorlevel 1 ( echo [build] tesmiolauncher.exe FAILED & exit /b 1 )
 if exist build\tesmiolauncher.exe.manifest del build\tesmiolauncher.exe.manifest
 

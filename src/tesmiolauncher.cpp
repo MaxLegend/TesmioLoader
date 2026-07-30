@@ -382,6 +382,7 @@ static bool FindViaSteam(wchar_t* out, size_t n)
 
 static wchar_t g_ini[MAX_PATH];
 static char    g_iniA[MAX_PATH];
+static wchar_t g_version[64] = L"";
 
 struct PluginEntry
 {
@@ -434,6 +435,8 @@ static void ScanPlugins(const wchar_t* dllDir)
 static void ReadConfig()
 {
     g_host = GetPrivateProfileIntA("tesmioloader", "plugins", 1, g_iniA) != 0;
+    GetPrivateProfileStringW(L"tesmioloader", L"version", L"unknown", 
+                             g_version, _countof(g_version), g_ini);
 }
 
 // Creates the ini when it is not there. Everything the loader does not find in
@@ -448,6 +451,12 @@ static void SaveConfig(const wchar_t* gameExe)
 {
     WritePrivateProfileStringW(L"tesmioloader", L"game_exe", gameExe, g_ini);
     WritePrivateProfileStringA("tesmioloader", "plugins", g_host ? "1" : "0", g_iniA);
+
+    char versionA[64] = {0};
+    WideCharToMultiByte(CP_ACP, 0, g_version, -1, versionA, sizeof(versionA), NULL, NULL);
+    char menu_tagA[128];
+    _snprintf_s(menu_tagA, _countof(menu_tagA), _TRUNCATE, "tesmioloader v. %s", versionA);
+    WritePrivateProfileStringA("tsmloader", "menu_tag", menu_tagA, g_iniA);
 
     for (int i = 0; i < g_plugCount; i++)
         WritePrivateProfileStringA("plugins", g_plug[i].key,
@@ -753,8 +762,12 @@ static bool ShowWindowUi(const wchar_t* gameFull)
     int cx = (GetSystemMetrics(SM_CXSCREEN) - winW) / 2;
     int cy = (GetSystemMetrics(SM_CYSCREEN) - winH) / 2;
 
+wchar_t windowTitle[128];
+    _snwprintf_s(windowTitle, _countof(windowTitle), _TRUNCATE, 
+                 L"tesmioloader v. %s", g_version);
+
     HWND hwnd = CreateWindowExW(WS_EX_CONTROLPARENT, wc.lpszClassName,
-                                L"tesmioloader", WS_OVERLAPPED | WS_CAPTION |
+                                windowTitle, WS_OVERLAPPED | WS_CAPTION |
                                 WS_SYSMENU | WS_MINIMIZEBOX,
                                 cx, cy, winW, winH, NULL, NULL, wc.hInstance, NULL);
     if (!hwnd) { Fail(L"CreateWindowEx"); return false; }
@@ -769,7 +782,7 @@ static bool ShowWindowUi(const wchar_t* gameFull)
     Child(hwnd, L"BUTTON", L"Plugins", BS_GROUPBOX,
           pad, groupY, W - 2 * pad, groupH, 0);
 
-    g_hostBox = Child(hwnd, L"BUTTON", L"Load plugins at all  (plugins = 0 is the first thing to try)",
+    g_hostBox = Child(hwnd, L"BUTTON", L"Load plugins at all",
                       BS_AUTOCHECKBOX | WS_TABSTOP,
                       pad + 12, groupY + 18, W - 2 * pad - 24, rowH - 2, IDC_HOST);
     SendMessageW(g_hostBox, BM_SETCHECK, g_host ? BST_CHECKED : BST_UNCHECKED, 0);

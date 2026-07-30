@@ -355,6 +355,7 @@ cannot tell never rejects.**
 | `category` | Token | `$STORAGE_*` | What the base game puts there |
 |---|---|---|---|
 | `auto`, `any` | — | any | wherever the donor landed. The default |
+| `none` | — | none | **nowhere.** A `building.ini` declares the shelf itself |
 | `basic` | 2 | `_DEMAND_BASIC` | food (covered), meat (cooler) |
 | `medium` | 3 | `_DEMAND_MEDIUM` | food, clothes |
 | `advanced` | 4 | `_DEMAND_ADVANCED` | food, clothes, eletronics |
@@ -367,6 +368,32 @@ It only ever narrows: a category never puts the goods somewhere the donor is
 not. Naming one whose shops do not sell the donor is allowed and logged as a
 `WARN` — the goods would sit where nobody walks for them, because it is the
 donor, not the category, that decides where the *demand* sends the citizen.
+
+### `none`, and the shop that sells one thing
+
+`none` narrows it all the way to nothing: **no storage anywhere gets a slot**,
+because a `building.ini` already declares the shelf.
+
+That is the case the donor rule cannot express at all. A good meant to be sold
+in one building of its own — medicine in a pharmacy — would otherwise land in
+every department store in the republic, since that is where its donor is. The
+building declares
+
+```ini
+$STORAGE_SPECIAL RESOURCE_TRANSPORT_COVERED 8 medicine
+```
+
+and nothing else has to happen, because the sale at `0x171DA0` never asks which
+`$STORAGE_*` token built a storage: it walks **every** storage of a `$TYPE_SHOP`
+building and moves anything whose resource a customer is asking for. The pub
+does the same with alcohol.
+
+**The other half of the plugin is untouched by `none`.** The citizen still gets
+the demand, cloned from the donor exactly as before — the donor is what the
+*demand* is cloned from, and that is a separate question from where the goods
+sit. See [13-buildings.md](13-buildings.md), which also says plainly what has
+not been established: whether the citizen's target search will actually pick a
+shop that stocks only a modded good.
 
 Plain warehouses need no help either way: they stock every resource of the
 class already, so the "and we are not in it" half of the rule skips them.
