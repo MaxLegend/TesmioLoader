@@ -35,6 +35,12 @@
 #include <stdlib.h>
 #include <string.h>
 
+// For TSM_API_VERSION, TSM_EXPORT_APIVERSION and TsmPluginApiVersionFn - the
+// launcher probes the same export the loader checks in LoadPlugins, so both
+// sides read one definition and can never disagree about what "compatible"
+// means.
+#include "tesmio_api.h"
+
 #pragma comment(lib, "user32.lib")
 #pragma comment(lib, "gdi32.lib")
 #pragma comment(lib, "advapi32.lib")
@@ -386,10 +392,13 @@ static wchar_t g_version[64] = L"";
 
 struct PluginEntry
 {
-    wchar_t file[64];       // resources.dll
-    char    key[64];        // resources - the [plugins] key, and the loader's
-    bool    on;
-    HWND    box;
+    wchar_t  file[64];      // resources.dll
+    char     key[64];       // resources - the [plugins] key, and the loader's
+    bool     on;
+    HWND     box;
+    unsigned apiVersion;    // what TsmPluginApiVersion() returned, 0 if unreadable
+    bool     apiKnown;      // the export was found and called without faulting
+    bool     apiOk;         // apiKnown && apiVersion == TSM_API_VERSION
 };
 static PluginEntry g_plug[MAX_PLUGINS];
 static int         g_plugCount;
@@ -401,12 +410,71 @@ static void SetIniPath(const wchar_t* dllDir)
     WideCharToMultiByte(CP_ACP, 0, g_ini, -1, g_iniA, sizeof(g_iniA), NULL, NULL);
 }
 
+// Loads a plugin DLL just far enough to ask it TsmPluginApiVersion(), then
+// unloads it again - the same two GetProcAddress calls and the same SEH guard
+// tesmioloader.cpp's LoadPlugins uses before it will call Init, just run here
+// so a mismatch is visible in the launcher window rather than only in
+// tesmioloader.log after the game has already been injected.
+//
+// Every shipped plugin's DllMain is a bare `return TRUE` on attach - the real
+// work happens in TsmPluginInit, which this never calls - so loading it here,
+// in the launcher's own process, does nothing the plugin would not have done
+// harmlessly anyway. FreeLibrary's DLL_PROCESS_DETACH is likewise a no-op: the
+// one plugin that closes a handle there (resources.dll) guards it with the
+// INVALID_HANDLE_VALUE its static keeps until Init runs, which never happens.
+//
+// Returns false when the DLL would not load at all or carries no
+// TsmPluginApiVersion export - "not a tesmioloader plugin", the loader's own
+// other rejection reason - rather than a version number.
+static bool QueryPluginApiVersion(const wchar_t* fullPath, unsigned* out)
+{
+    *out = 0;
+
+    HMODULE mod = LoadLibraryExW(fullPath, NULL, LOAD_WITH_ALTERED_SEARCH_PATH);
+    if (!mod) return false;
+
+    TsmPluginApiVersionFn ver =
+        (TsmPluginApiVersionFn)GetProcAddress(mod, TSM_EXPORT_APIVERSION);
+    if (!ver) { FreeLibrary(mod); return false; }
+
+    unsigned got = 0;
+    bool ok = true;
+    __try { got = ver(); }
+    __except (EXCEPTION_EXECUTE_HANDLER) { ok = false; }
+
+    FreeLibrary(mod);
+    if (!ok) return false;
+
+    *out = got;
+    return true;
+}
+
+// Empty when the plugin's own reported version matches this build of the
+// loader. Otherwise the same two rejection reasons LoadPlugins logs -
+// "not initialised" or "no TsmPluginApiVersion export" - phrased for the
+// window and the --find printout rather than the log file.
+static void PluginWarning(const PluginEntry* e, wchar_t* out, size_t n)
+{
+    out[0] = 0;
+    if (e->apiOk) return;
+
+    if (e->apiKnown)
+        _snwprintf_s(out, n, _TRUNCATE,
+                     L"incompatible: wants API %u, this loader is %u",
+                     e->apiVersion, TSM_API_VERSION);
+    else
+        _snwprintf_s(out, n, _TRUNCATE, L"not a tesmioloader plugin");
+}
+
 // Alphabetical, which is what FindFirstFile gives on NTFS and the order the
 // loader will load them in.
 static void ScanPlugins(const wchar_t* dllDir)
 {
+    wchar_t pluginsDir[MAX_PATH];
+    Join(pluginsDir, _countof(pluginsDir), dllDir, L"plugins");
+
     wchar_t pattern[MAX_PATH];
-    Join(pattern, _countof(pattern), dllDir, L"plugins\\*.dll");
+    Join(pattern, _countof(pattern), pluginsDir, L"*.dll");
 
     WIN32_FIND_DATAW fd;
     HANDLE h = FindFirstFileW(pattern, &fd);
@@ -427,6 +495,17 @@ static void ScanPlugins(const wchar_t* dllDir)
         WideCharToMultiByte(CP_ACP, 0, stem, -1, e->key, sizeof(e->key), NULL, NULL);
 
         e->on = GetPrivateProfileIntA("plugins", e->key, 1, g_iniA) != 0;
+
+        wchar_t full[MAX_PATH];
+        Join(full, _countof(full), pluginsDir, fd.cFileName);
+        e->apiKnown = QueryPluginApiVersion(full, &e->apiVersion);
+        e->apiOk    = e->apiKnown && e->apiVersion == TSM_API_VERSION;
+
+        // The loader will refuse to initialise this one regardless of what the
+        // ini says, so a checked box would be lying about what ticking it
+        // does. Forcing it off here is what SaveConfig then persists, and what
+        // the checkbox below is built already unchecked from.
+        if (!e->apiOk) e->on = false;
     } while (FindNextFileW(h, &fd));
 
     FindClose(h);
@@ -452,11 +531,17 @@ static void SaveConfig(const wchar_t* gameExe)
     WritePrivateProfileStringW(L"tesmioloader", L"game_exe", gameExe, g_ini);
     WritePrivateProfileStringA("tesmioloader", "plugins", g_host ? "1" : "0", g_iniA);
 
+    // Not a setting - regenerated from `version` on every launch and written
+    // straight into the loader's own [tesmioloader] section, so nobody has to
+    // keep the two in step by hand. (This used to land under "tsmloader" -
+    // one letter short of the section tesmioloader.cpp's ReadConfig actually
+    // reads - which is why the menu kept showing its compiled-in default no
+    // matter what `version` said.)
     char versionA[64] = {0};
     WideCharToMultiByte(CP_ACP, 0, g_version, -1, versionA, sizeof(versionA), NULL, NULL);
     char menu_tagA[128];
     _snprintf_s(menu_tagA, _countof(menu_tagA), _TRUNCATE, "tesmioloader v. %s", versionA);
-    WritePrivateProfileStringA("tsmloader", "menu_tag", menu_tagA, g_iniA);
+    WritePrivateProfileStringA("tesmioloader", "menu_tag", menu_tagA, g_iniA);
 
     for (int i = 0; i < g_plugCount; i++)
         WritePrivateProfileStringA("plugins", g_plug[i].key,
@@ -574,8 +659,11 @@ static HWND Child(HWND parent, const wchar_t* cls, const wchar_t* text,
 
 static void SyncPluginBoxes()
 {
+    // An API mismatch keeps a box disabled even with "Load plugins at all"
+    // checked - there is nothing a click could turn on, since LoadPlugins
+    // rejects it before Init regardless of the ini.
     for (int i = 0; i < g_plugCount; i++)
-        EnableWindow(g_plug[i].box, g_host ? TRUE : FALSE);
+        EnableWindow(g_plug[i].box, (g_host && g_plug[i].apiOk) ? TRUE : FALSE);
 }
 
 static void Browse(HWND owner)
@@ -618,10 +706,27 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
     switch (msg)
     {
     case WM_CTLCOLORSTATIC:
+    {
         // Statics, group boxes and checkboxes all ask, and all of them sit on
         // the dialog face rather than on a white field.
         SetBkColor((HDC)wp, GetSysColor(COLOR_BTNFACE));
+
+        // A plugin box whose own reported API version does not match this
+        // loader is painted red rather than only carrying a bracketed suffix
+        // in its label - the loader will refuse to initialise it exactly as
+        // if it were unchecked, so the box lies about what ticking it does
+        // unless the mismatch is obvious at a glance.
+        HWND ctl = (HWND)lp;
+        for (int i = 0; i < g_plugCount; i++)
+        {
+            if (g_plug[i].box == ctl && !g_plug[i].apiOk)
+            {
+                SetTextColor((HDC)wp, RGB(176, 0, 0));
+                break;
+            }
+        }
         return (LRESULT)GetSysColorBrush(COLOR_BTNFACE);
+    }
 
     case WM_COMMAND:
     {
@@ -790,7 +895,17 @@ wchar_t windowTitle[128];
     for (int i = 0; i < g_plugCount; i++)
     {
         PluginEntry* e = &g_plug[i];
-        e->box = Child(hwnd, L"BUTTON", e->file, BS_AUTOCHECKBOX | WS_TABSTOP,
+
+        wchar_t warn[96];
+        PluginWarning(e, warn, _countof(warn));
+
+        wchar_t label[160];
+        if (warn[0])
+            _snwprintf_s(label, _countof(label), _TRUNCATE, L"%s   [%s]", e->file, warn);
+        else
+            wcscpy_s(label, _countof(label), e->file);
+
+        e->box = Child(hwnd, L"BUTTON", label, BS_AUTOCHECKBOX | WS_TABSTOP,
                        pad + 26, groupY + 18 + rowH + i * 20,
                        W - 2 * pad - 38, 18, IDC_PLUGIN0 + i);
         SendMessageW(e->box, BM_SETCHECK, e->on ? BST_CHECKED : BST_UNCHECKED, 0);
@@ -918,7 +1033,15 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
         Msg(L"ini    %s", g_ini);
         Msg(L"dll    %s%s", g_dllFull, Exists(g_dllFull) ? L"" : L"   (missing)");
         for (int i = 0; i < g_plugCount; i++)
-            Msg(L"plugin %-20s %s", g_plug[i].file, g_plug[i].on ? L"on" : L"off");
+        {
+            wchar_t warn[96];
+            PluginWarning(&g_plug[i], warn, _countof(warn));
+            if (warn[0])
+                Msg(L"plugin %-20s %-3s   [%s]", g_plug[i].file,
+                    g_plug[i].on ? L"on" : L"off", warn);
+            else
+                Msg(L"plugin %-20s %s", g_plug[i].file, g_plug[i].on ? L"on" : L"off");
+        }
         Msg(L"game   %s", found[0] ? found : L"NOT FOUND");
         return found[0] ? 0 : 1;
     }

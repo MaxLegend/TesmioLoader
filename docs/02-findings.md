@@ -73,7 +73,13 @@ does, in `RebaseResourceCache`.
 |---|---|
 | `+0x00` | name, inline, NUL-terminated, up to 32 bytes |
 | `+0x40` | localisation id of the display caption |
+| `+0x44` | price kind — see [Money](#money) |
 | `+0x48` | the resource's icon texture, `media_soviet/resources/<name>.png` |
+| `+0x58` / `+0x5C` | **price**, RUB and USD |
+| `+0x70` / `+0x74` | the previous price, mirrored by the pass for `eletric` only |
+| `+0x78` / `+0x7C` | **base price**, RUB and USD — `$Economy_Base*` |
+| `+0x80` / `+0x84` | the previous base, mirrored by the drift pass |
+| `+0x88` / `+0x8C` | sell and buy multipliers, `0.95` and `1.05` on every resource |
 
 `+0x48` is what the minimap button row binds, so any UI that wants a resource's
 icon can take it straight from the record instead of loading its own asset.
@@ -82,6 +88,120 @@ Found by diffing full records of `workers`, `coal`, `rawiron` and `alcohol`:
 `+0x40` was the only field that differed between them and stayed stable across
 runs — 518, 508, 524, 512 respectively. The rest of the 832 bytes is not
 mapped; cloning an existing record is how a new one is made viable.
+
+### The resource table
+
+`0x2A1D60`, 30 KB of straight-line code with one block per resource, each built
+in a stack buffer at `rsp+0x40` and pushed with `add qword ptr [rbx+8], 0x340`.
+Its prologue is `lea rbp,[rsp-0x290]` before `sub rsp,0x390`, so **`rbp` is
+`record + 0xC0`** and every constant in it reads off directly:
+`mov [rbp-0x80], 0x207` is caption id 519.
+
+**It only covers the first 35 records** — `workers` through `clothes`. There are
+exactly 35 pushes in the whole executable at that stride and the last one is at
+`0x2A618A`; the remaining 22 records are built somewhere that does not use the
+same idiom. Their constants are still in the same code range and still written
+through `rbp`, which is how `explosives` at `0x2A6D0B` and `water` at `0x2A6E52`
+were read.
+
+Everything the table writes is a *starting* value. The price pass below
+overwrites `+0x58`/`+0x5C` for all but one kind before the first frame.
+
+### Money
+
+Two float pairs and one integer, and between them they are everything the trade
+window quotes. Confirmed field by field against the `$Economy_*` blocks a save
+writes into `media_soviet/save/<name>/stats.ini`, which is the only place the
+engine's own names for them are visible.
+
+**`+0x44` is the price kind**, and the first thing the pass branches on:
+
+| Value | Resources |
+|---|---|
+| `-1` | `workers` — skipped by the pass entirely, so its constants stand |
+| `-2` | `eletric` |
+| `-3` | `vehicles` |
+| `-4` | `trains` |
+| `-5` | `heat` — pinned to `1.0` in both currencies |
+| `0` | raw: everything mined, pumped, grown or scrapped |
+| `1` | manufactured |
+| `2` | `food` and `clothes` |
+
+**`+0x58`/`+0x5C` is the price.** The trade window's buy figure is this times
+`+0x8C` (`1.05`) and its sell figure this times `+0x88` (`0.95`) — one number
+per currency behind both, which checks out to five figures against any save:
+coal `16.940750` to buy and `15.327346` to sell are `16.133 × 1.05` and
+`16.133 × 0.95`.
+
+**`+0x78`/`+0x7C` is the base price**, `$Economy_BaseRUB` and
+`$Economy_BaseUSD`. It is an *input* to the solver, not a result. Only fifteen
+base-game resources have one and they are the ones that come out of the ground
+or cannot be produced at all: `rawgravel` 1.2, `plants` 1.8, `wood` 7.5, `oil`
+40, `rawcoal` 5.3, `rawiron` 4.5, `rawbauxite` 4.5, `uranium` 5.2/4.2,
+`explosives` 15/13, `water` 0.3/0.2, `usagewater` 40, `waste_toxic` 115/100 and
+four other wastes.
+
+**Which float is which currency was settled on the three that differ** —
+`uranium`, `explosives`, `water` — because every other base pair is the same
+number twice. `+0x78` is RUB in all three. One thing does not fit and is
+recorded here rather than explained away: world init at `0x28ED59` writes
+`workers+0x5C = 9.0` and `+0x58 = 12.0`, while the save calls the workday cost
+`RUB 9.0` and `USD 12.0`. Either the record's worker price is not the workday
+cost, or one of the two identifications is backwards; the base-price evidence is
+three independent resources against that one coincidence.
+
+### The price pass
+
+```
+rva 0x2A92D0   void RecomputeResourcePrices(GameObject*)
+rva 0x2A9470   float ResourcePrice(GameObject*, Resource*, bool rub, bool usd, ...)
+```
+
+`0x2A92D0` walks the whole vector and, per record, reads `+0x44` and then either
+skips it (kind `-1`), pins it to `1.0` (kind `-5`), or calls `0x2A9470` twice and
+stores the results in `+0x5C` and `+0x58`. Called from world init at `0x28ED78`
+and from the economy module at `0x2FBB95`, each time followed by `0x2A9F40`.
+
+`0x2A9470` is where the base price is consumed. Its shape is
+`workers_price × k + resource_base`, once per currency, with the two flags
+selecting `(+0x58, +0x78)` or `(+0x5C, +0x7C)` — the pairing that makes both
+fields the same currency. A handful of resources are special-cased by name
+(`plants`) or against a cached record; everything else falls into two loops over
+the building types at `game+0x11B20`, stride `0xBE8`, looking for one whose
+output list contains this resource and summing what its inputs cost.
+
+**A resource no building type produces prices at zero**, whatever its base is:
+both loops fall through to `0x2A9F0D`, which returns the register zeroed on the
+way in. Nothing consults `+0x78` on that path. This is the whole explanation for
+a modded resource showing `0` in the trade table while another one shows a real
+figure — copper is mined, concentrated, smelted and refined, so all four price
+themselves, and a name declared in `[list]` and used by no `$PRODUCTION` line
+cannot.
+
+A third pass at `0x2FB390` drifts the base prices: for every record whose base is
+non-zero it multiplies `+0x7C` and `+0x78` by two independent random walks, then
+mirrors them into `+0x84` and `+0x80`. That is why a base written once does not
+stay put, and why `resources` writes it again before every recompute.
+
+### The economy vectors
+
+`$Economy_*` in a save is six `std::vector<{Resource*, float value, float mul}>`
+on the economy object, 16 bytes an entry:
+
+| Offset | Section |
+|---|---|
+| `+0x198` | `$Economy_PurchaseCostUSD` |
+| `+0x1B0` | `$Economy_PurchaseCostRUB` |
+| `+0x1C8` | `$Economy_SellCostUSD` |
+| `+0x1E0` | `$Economy_SellCostRUB` |
+| `+0x1F8` | `$Economy_BaseRUB` |
+| `+0x210` | `$Economy_BaseUSD` |
+
+The parser is one strcmp chain at `0x2FFD60` handing each section to `0x301C10`,
+which clears the vector and pushes one entry per line: `ResourceGet` on the name,
+then two floats. **Keyed by `Resource*`, not by index** — so a mod resource
+round-trips through a save without anything being taught about it, and a
+resource the save does not mention simply has no entry.
 
 ### Index order
 

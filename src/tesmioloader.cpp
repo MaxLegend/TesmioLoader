@@ -1475,7 +1475,14 @@ static const BYTE kMenuLeaOrig[3] = { 0x48, 0x8D, 0x05 };   // lea rax,[rip+disp
 static const wchar_t kMenuVersionFmt[] = L"v%d.%d.%d.%d (64 bit DX11.1 - GPU: %ls)";
 
 static int     g_menuPatch = 1;
-static wchar_t g_menuTag[96] = L"tsmloader v.a0.1.";
+
+// No compiled-in default: tesmiolauncher's SaveConfig recomputes this from
+// `version` before every Inject and writes it into this same [tesmioloader]
+// section, so a value never reaches here except freshly derived. An empty
+// read means only "never launched through tesmiolauncher yet" - which
+// PatchMenuVersion already treats as "leave the line alone", rather than
+// showing a number nobody chose for this run.
+static wchar_t g_menuTag[96] = L"";
 
 static void PatchMenuVersion()
 {

@@ -283,7 +283,15 @@ everything a feature needs lives in that plugin's own ini.
 | `probe_texel` | watch texel reads of the deposit maps |
 | `plugins` | scan `plugins\` and load what is there |
 | `menu_patch` | append `menu_tag` to the main menu's version line |
-| `menu_tag` | what to append; ASCII, empty leaves the line alone |
+| `version` | this build's version, shown in the launcher's title bar |
+
+`menu_tag` also lives in this section, but it is not a setting: tesmiolauncher's
+SaveConfig derives it from `version` (`"tesmioloader v. " + version`) and
+rewrites it here before every launch, so it is always in step with `version`
+and never worth hand-editing. ASCII only - it is read through the ANSI profile
+API, so anything past 0x7F would arrive as its raw bytes - and empty leaves the
+menu's version line untouched, which is what a build that has never been
+launched through tesmiolauncher will see.
 
 **One file per plugin, beside its DLL, and it holds everything that plugin
 needs** — both its wiring and whatever content it declares:

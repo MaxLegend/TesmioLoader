@@ -10,6 +10,9 @@
 //   rva 0x9E11C0  the vector object - begin, end, capacity. Publishing a record
 //                 is writing `end`; the engine allocates 63 and fills 57, so
 //                 six mod resources fit without moving anything.
+//   rva 0x2A92D0  the price pass. Walks the vector and writes every record's
+//                 price from the production chains. Bracketed, so [base_price]
+//                 lands before it and [price] after it.
 //
 // A new record is a clone of a template's, with its own name, caption id and
 // cargo meshes. Only the icon is found by name - every mesh path in the base
@@ -148,6 +151,64 @@ static bool g_warnedCapacity;
 // stable across runs (518 / 508 / 524 / 512).
 #define RES_TEXTID_OFF 0x40
 
+// ---------------------------------------------------------------- money
+//
+// **Four floats and one integer, and between them they are the whole of what
+// the trade table shows.** Read off the engine's own resource table at
+// 0x2A1D60, which builds every record in a stack buffer whose rbp is
+// `record + 0xC0`, and confirmed field by field against the `$Economy_*`
+// blocks a save writes into `media_soviet/save/<name>/stats.ini`.
+//
+//   +0x44  the price *kind*, and the first thing the pass below branches on:
+//          -1 workers, -2 eletric, -3 vehicles, -4 trains, -5 heat, and for
+//          everything else 0 raw, 1 manufactured, 2 consumer good.
+//   +0x58  price in RUB   +0x5C  price in USD
+//   +0x78  base in RUB    +0x7C  base in USD
+//
+// The *price* is what the interface divides and multiplies: the trade window's
+// buy figure is the price times the record's own 1.05 at +0x8C and its sell
+// figure the same price times 0.95 at +0x88. Both come from one number per
+// currency, which is why forcing that number is enough to move every screen
+// that quotes a resource. It is not a constant - `PriceRecompute` below
+// overwrites all of them from the production chains, and the values the
+// resource table ships are only what a resource is worth before any building
+// type has been read.
+//
+// The *base* is the `$Economy_Base*` a save carries, and it is an input to
+// that solver rather than a result: only fifteen resources in the base game
+// have one, and they are the ones that come out of the ground or cannot be
+// produced at all - `rawiron` 4.5/4.5, `uranium` 5.2/4.2, `explosives`
+// 15/13, `water` 0.3/0.2. Which of the two floats is which currency was
+// settled on those three, because they are the only ones whose pair differs.
+//
+// **A resource no building type produces prices at zero**, whatever its base
+// is: the solver at 0x2A9470 walks the building types looking for one whose
+// output is this resource and returns the register it zeroed on the way in
+// when it finds none. That is the whole of the reported symptom - copper is
+// mined, concentrated, smelted and refined, so all four price themselves,
+// while a name declared in `[list]` and used by nothing at all cannot.
+#define RES_KIND_OFF   0x44
+#define RES_PRICE_RUB  0x58
+#define RES_PRICE_USD  0x5C
+#define RES_BASE_RUB   0x78
+#define RES_BASE_USD   0x7C
+
+// C3D_GAME::RecomputeResourcePrices(game). Loops the whole resource vector and
+// writes +0x58 and +0x5C for every record, skipping kind -1 and pinning kind
+// -5 to 1.0. Called from world init at 0x28ED78 and from the economy module at
+// 0x2FBB95, each time followed by 0x2A9F40.
+#define DEFAULT_PRICEPASS_RVA 0x2A92D0
+
+static const BYTE kPricePassPrologue[] = {
+    0x48, 0x89, 0x6C, 0x24, 0x18,   // mov  [rsp+18h], rbp
+    0x57,                           // push rdi
+    0x41, 0x56,                     // push r14
+    0x41, 0x57,                     // push r15
+    0x48, 0x83, 0xEC, 0x30          // sub  rsp, 30h
+};                                  // exactly 14, the minimum the host allows
+
+static DWORD g_priceRva = DEFAULT_PRICEPASS_RVA;
+
 // The record's last five qwords are its cargo meshes, and they are exactly the
 // tail of the 832-byte record - 0x338 + 8 == 0x340.
 //
@@ -211,6 +272,57 @@ static ResEntry g_reg[RES_MAX_ENTRIES];
 static int      g_regCount;
 static bool     g_regOverflow;
 
+// One resource's money, from `[base_price]` and `[price]`. Keyed by name and
+// **not by [list] index**, so the same two sections can retune a base-game
+// resource; nothing in what follows cares whether a record is ours.
+struct PriceEntry
+{
+    char  name[64];
+    float baseRub, baseUsd;
+    float priceRub, priceUsd;
+    bool  hasBase, hasPrice;
+};
+
+static PriceEntry g_price[RES_MAX_ENTRIES];
+static int        g_priceCount;
+static int        g_priceHook = 1;      // 0 off, 1 install the bracket
+static int        g_priceReport = 1;    // log the table after every recompute
+
+static PriceEntry* PriceEntryFor(const char* name)
+{
+    for (int i = 0; i < g_priceCount; i++)
+        if (_stricmp(g_price[i].name, name) == 0) return &g_price[i];
+    if (g_priceCount >= RES_MAX_ENTRIES) return NULL;
+
+    PriceEntry& e = g_price[g_priceCount++];
+    memset(&e, 0, sizeof(e));
+    strncpy_s(e.name, sizeof(e.name), name, _TRUNCATE);
+    return &e;
+}
+
+// "<rub>[, <usd>]". One number sets both, which is what most of the base
+// game's own base prices do - only uranium, explosives, water, usagewater and
+// the waste resources price the two currencies apart.
+static bool ParseMoneyPair(char* v, float* rub, float* usd)
+{
+    Trim(v);
+    if (!v[0]) return false;
+
+    char* second = strchr(v, ',');
+    if (second) *second++ = 0;
+    Trim(v);
+    if (!v[0]) return false;
+
+    *rub = (float)atof(v);
+    *usd = *rub;
+    if (second)
+    {
+        Trim(second);
+        if (second[0]) *usd = (float)atof(second);
+    }
+    return true;
+}
+
 // Parsed by hand rather than through the profile API: display names are UTF-8
 // and GetPrivateProfileString would mangle anything outside the ANSI codepage.
 static void LoadResourceRegistry()
@@ -248,17 +360,64 @@ static void LoadResourceRegistry()
     CloseHandle(h);
     buf[got] = 0;
 
-    bool inSection = false;
+    enum { SECT_NONE, SECT_LIST, SECT_BASE, SECT_PRICE };
+
+    int   inSection = SECT_NONE;
     char* ctx = NULL;
     for (char* line = strtok_s(buf, "\n", &ctx); line; line = strtok_s(NULL, "\n", &ctx))
     {
         Trim(line);
         if (!line[0] || line[0] == ';' || line[0] == '#') continue;
-        // [list] is the content, [resources] is the plugin's own settings, and
-        // they share a file so a feature is one file. Any other section is
-        // somebody else's and is skipped.
-        if (line[0] == '[') { inSection = _strnicmp(line, "[list]", 6) == 0; continue; }
-        if (!inSection) continue;
+        // [list] is the content, [base_price] and [price] are its money, and
+        // [resources] is the plugin's own settings; they share a file so a
+        // feature is one file. Any other section is somebody else's and is
+        // skipped.
+        if (line[0] == '[')
+        {
+            inSection = _strnicmp(line, "[list]", 6)       == 0 ? SECT_LIST
+                      : _strnicmp(line, "[base_price]", 12) == 0 ? SECT_BASE
+                      : _strnicmp(line, "[price]", 7)       == 0 ? SECT_PRICE
+                      : SECT_NONE;
+            continue;
+        }
+        if (inSection == SECT_NONE) continue;
+
+        if (inSection != SECT_LIST)
+        {
+            char* eq = strchr(line, '=');
+            if (!eq) continue;
+            *eq = 0;
+            Trim(line);
+            if (!line[0]) continue;
+
+            PriceEntry* p = PriceEntryFor(line);
+            if (!p)
+            {
+                Logf("registry  more than %d priced names - \"%s\" ignored",
+                     RES_MAX_ENTRIES, line);
+                continue;
+            }
+
+            float a = 0, b = 0;
+            if (!ParseMoneyPair(eq + 1, &a, &b))
+            {
+                Logf("registry  \"%s\": %s needs <rub>[, <usd>]", line,
+                     inSection == SECT_BASE ? "[base_price]" : "[price]");
+                continue;
+            }
+            if (inSection == SECT_BASE)
+            {
+                p->baseRub = a; p->baseUsd = b; p->hasBase = true;
+                Logf("registry  \"%s\" base price %.2f RUB / %.2f USD", p->name, a, b);
+            }
+            else
+            {
+                p->priceRub = a; p->priceUsd = b; p->hasPrice = true;
+                Logf("registry  \"%s\" price %.2f RUB / %.2f USD, forced", p->name, a, b);
+            }
+            continue;
+        }
+
         if (g_regCount >= RES_MAX_ENTRIES)
         {
             if (!g_regOverflow)
@@ -917,6 +1076,152 @@ static void DumpRecords(BYTE* base)
     }
 }
 
+// ---------------------------------------------------------------- prices
+
+// The record carrying a name, mod or base game, read out of the live vector.
+// Deliberately not cached: a world load rebuilds the array, sometimes in the
+// same block, and this runs a handful of times a session rather than per tick.
+static BYTE* FindRecord(const char* name)
+{
+    if (g_nameOff < 0) return NULL;
+
+    ResVector* vec = (ResVector*)(g_exeBase + g_vecRva);
+    if (!Readable(vec, sizeof(ResVector))) return NULL;
+
+    BYTE* base = vec->begin;
+    ptrdiff_t span = vec->end - base;
+    if (!base || span <= 0 || (span % RES_STRIDE) != 0) return NULL;
+
+    int live = (int)(span / RES_STRIDE);
+    if (live < 2 || live > RES_KNOWN + RES_MAX_ENTRIES + 64) return NULL;
+
+    // One query for the whole array rather than one per record: this is called
+    // three times per declared name per recompute, and Readable walks regions.
+    if (!Readable(base, (size_t)live * RES_STRIDE)) return NULL;
+
+    for (int i = 0; i < live; i++)
+    {
+        BYTE* rec = base + (size_t)i * RES_STRIDE;
+        if (strncmp((char*)(rec + g_nameOff), name, 32) == 0) return rec;
+    }
+    return NULL;
+}
+
+// The records are heap memory and already writable, so this is belt and
+// braces - the same call EnsureArmed makes before it edits a record, kept so
+// that a page which somehow is not writable turns into a silent no-op rather
+// than an access violation on the render thread.
+static bool WriteRecordFloats(BYTE* rec, int offA, float a, int offB, float b)
+{
+    DWORD prot = 0;
+    if (!VirtualProtect(rec, RES_STRIDE, PAGE_READWRITE, &prot)) return false;
+    *(float*)(rec + offA) = a;
+    *(float*)(rec + offB) = b;
+    VirtualProtect(rec, RES_STRIDE, prot, &prot);
+    return true;
+}
+
+static bool g_warnedNoLayout;
+
+// Before the engine's pass, because the solver reads the base on its way in.
+// Re-applied on every recompute rather than once at arm time: a save carries
+// `$Economy_Base*` and puts the game's own numbers back into the record, and
+// the drift at 0x2FB390 multiplies whatever is there by a random walk twice a
+// period. Pinning it here makes the .ini the last word on both.
+static void ApplyBasePrices(void)
+{
+    for (int i = 0; i < g_priceCount; i++)
+    {
+        PriceEntry& p = g_price[i];
+        if (!p.hasBase) continue;
+
+        BYTE* rec = FindRecord(p.name);
+        if (!rec) continue;
+        WriteRecordFloats(rec, RES_BASE_RUB, p.baseRub, RES_BASE_USD, p.baseUsd);
+    }
+}
+
+// After it, because the pass overwrites +0x58/+0x5C for every record it does
+// not skip. This is the half that gives a price to a resource no building type
+// produces - for those the solver returns a zeroed register and the base is
+// never consulted at all.
+static void ApplyForcedPrices(void)
+{
+    for (int i = 0; i < g_priceCount; i++)
+    {
+        PriceEntry& p = g_price[i];
+        if (!p.hasPrice) continue;
+
+        BYTE* rec = FindRecord(p.name);
+        if (!rec)
+        {
+            Logf("price     \"%s\" has no record - nothing forced. Is it in [list], "
+                 "and did it publish?", p.name);
+            continue;
+        }
+        if (!WriteRecordFloats(rec, RES_PRICE_RUB, p.priceRub, RES_PRICE_USD, p.priceUsd))
+            Logf("price     \"%s\": record is not writable (%lu)", p.name, GetLastError());
+    }
+}
+
+static void ReportOnePrice(const char* name)
+{
+    BYTE* rec = FindRecord(name);
+    if (!rec) { Logf("price     %-20s not in the vector", name); return; }
+
+    Logf("price     %-20s %10.2f RUB %10.2f USD   base %.2f / %.2f   kind %d",
+         name,
+         *(float*)(rec + RES_PRICE_RUB), *(float*)(rec + RES_PRICE_USD),
+         *(float*)(rec + RES_BASE_RUB),  *(float*)(rec + RES_BASE_USD),
+         *(int*)(rec + RES_KIND_OFF));
+}
+
+// What the engine actually decided, which is the only thing that answers "why
+// is this one zero". A price of 0.00 with a non-zero base means nothing
+// produces the resource; a price of 0.00 with a zero base means neither does.
+static void ReportPrices(void)
+{
+    if (!g_priceReport) return;
+
+    for (int i = 0; i < g_regCount; i++)
+        ReportOnePrice(g_reg[i].name);
+
+    for (int i = 0; i < g_priceCount; i++)
+    {
+        bool listed = false;
+        for (int r = 0; r < g_regCount; r++)
+            if (_stricmp(g_reg[r].name, g_price[i].name) == 0) listed = true;
+        if (!listed) ReportOnePrice(g_price[i].name);
+    }
+}
+
+// The bracket. Base in before the pass, forced price out after it, and the
+// report last - one hook rather than two, because both halves are keyed to the
+// same call and doing them anywhere else means racing whatever wrote last.
+typedef void (*t_PricePass)(void*);
+static t_PricePass o_PricePass;
+
+static void h_PricePass(void* game)
+{
+    EnterCriticalSection(&g_lock);
+    if (g_nameOff < 0 && !g_warnedNoLayout)
+    {
+        g_warnedNoLayout = true;
+        Logf("price     the record layout is not known yet - no price is applied "
+             "to this pass. Expect the next one to work");
+    }
+    __try { ApplyBasePrices(); }
+    __except (FaultFilter("resources price base", GetExceptionInformation())) {}
+    LeaveCriticalSection(&g_lock);
+
+    o_PricePass(game);
+
+    EnterCriticalSection(&g_lock);
+    __try { ApplyForcedPrices(); ReportPrices(); }
+    __except (FaultFilter("resources price force", GetExceptionInformation())) {}
+    LeaveCriticalSection(&g_lock);
+}
+
 static unsigned __int64 h_ResourceGet(void* a1, void* a2, void* a3, void* a4)
 {
     char n1[128], n2[128];
@@ -1012,7 +1317,7 @@ extern "C" __declspec(dllexport) int TsmPluginInit(const TsmHost* host, TsmPlugi
 {
     TsmBind(host);
     info->name    = "resources";
-    info->version = "1.1";
+    info->version = "1.2";
 
     const char* ini = "plugins\\resources.ini";
     char v[64];
@@ -1033,6 +1338,11 @@ extern "C" __declspec(dllexport) int TsmPluginInit(const TsmHost* host, TsmPlugi
     // - "never move the array" - into "size it automatically", the opposite.
     if (H->configString(ini, "resources", "resource_capacity", v, sizeof(v), "") && v[0])
         g_wantCapacity = (int)strtol(v, NULL, 0);
+
+    g_priceHook   = H->configInt(ini, "resources", "price_hook", g_priceHook);
+    g_priceReport = H->configInt(ini, "resources", "price_report", g_priceReport);
+    if (H->configString(ini, "resources", "price_pass_rva", v, sizeof(v), "") && v[0])
+        g_priceRva = (DWORD)strtoul(v, NULL, 0);
 
     g_hRes = TsmOpenLog("tesmioloader.resources.log");
     const char* hdr = "; name                     which-arg  return value   discovering call site\r\n";
@@ -1062,6 +1372,26 @@ extern "C" __declspec(dllexport) int TsmPluginInit(const TsmHost* host, TsmPlugi
                            (void**)&o_ResourceGet, kResourceGetPrologue,
                            STOLEN_BYTES, "ResourceGet"))
         return 1;
+
+    // The price bracket. Installed whenever there is something to say - an
+    // override to apply or a table to print - and skipped entirely otherwise,
+    // so a .ini with no money in it costs nothing. A refusal here is not fatal:
+    // resources still exist, they are just priced by the engine alone.
+    bool wantPrices = false;
+    for (int i = 0; i < g_priceCount; i++)
+        if (g_price[i].hasBase || g_price[i].hasPrice) wantPrices = true;
+
+    if (g_priceHook && (wantPrices || g_priceReport))
+    {
+        if (InstallInlineHook(g_exeBase + g_priceRva, (void*)h_PricePass,
+                              (void**)&o_PricePass, kPricePassPrologue,
+                              sizeof(kPricePassPrologue), "resource price pass"))
+            Logf("price     bracket on 0x%lX: %d name(s) priced, report %s",
+                 g_priceRva, g_priceCount, g_priceReport ? "on" : "off");
+        else
+            Logf("price     WARN  no hook on the price pass - [base_price] and "
+                 "[price] do nothing this session");
+    }
 
     Logf("resource  hook mode=%d rva=0x%lX, %d name(s) declared, array %s",
          g_resHook, g_resRva, g_regCount,

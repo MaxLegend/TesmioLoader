@@ -175,6 +175,104 @@ $STORAGE_EXPORT RESOURCE_TRANSPORT_GRAVEL 50.00
 
 The storage class must match the resource's own.
 
+## What it costs
+
+**The game does not store a price per resource. It computes one**, at world init
+and again whenever the economy updates, by walking every building type looking
+for one whose `$PRODUCTION` names the resource and adding up what its inputs
+cost. `0x2A92D0` is that pass and `0x2A9470` is the solver behind it; both are
+written up in [02-findings.md](02-findings.md).
+
+Two consequences, and the first is the one that gets reported as a bug:
+
+**A resource nothing produces prices at zero.** The solver's two loops over the
+building types fall through and it returns the register it zeroed on the way in.
+Nothing reads the base price on that path. So `copper_ore`, `copper_concentrate`,
+`raw_copper`, `copper` and `furniture` all price themselves — each has a factory
+or a mine — while a name declared in `[list]` and used by no `$PRODUCTION` line
+anywhere is `0.00` however it is configured.
+
+**A clone inherits the template's money.** `copper_ore` starts life with
+`rawiron`'s base of 4.5 in both currencies because the whole 832-byte record is
+copied, which is why the copper chain looked correctly priced without anyone
+setting anything.
+
+**Both of those are confirmed on a real save**, not read off a decompiler.
+`media_soviet/save/15695 - coppertest2/stats.ini`, written by a game with all
+ten mod resources live:
+
+| Resource | Produced by | `$Economy_BaseUSD` | `$Economy_PurchaseCostUSD` |
+|---|---|---|---|
+| `copper` | electrolysis plant | 0 | 765.40 |
+| `furniture` | furniture factory | 0 | 1408.23 |
+| `medicine` | pharmacy plant | 0 | 1957.99 |
+| `copper_ore` | copper mine | 4.5, from `rawiron` | 7.88 |
+| `gas` | **nothing** | **40, from `oil`** | **0.00** |
+| `sand`, `clay`, `glass` | nothing | 0 | 0.00 |
+
+`gas` is the line that settles it: it carries `oil`'s base of 40 in both
+currencies and still prices at exactly zero, because no building type produces
+it. **A base price is not a floor.**
+
+### The two sections
+
+`plugins/resources.ini`, both taking `<resource> = <rubles>[, <dollars>]`, one
+number setting both. Names may be mod resources or base-game ones — they are
+looked up in the engine's vector by name, so retuning `rawiron` works exactly as
+well as pricing `sand`.
+
+```ini
+[base_price]
+copper_ore = 6.0, 5.0
+
+[price]
+sand = 12.0, 10.0
+```
+
+**`[base_price]` is `$Economy_BaseRUB` / `$Economy_BaseUSD`**, record `+0x78` and
+`+0x7C` — the raw-material value the solver starts from. Fifteen base-game
+resources have one and they are the ones dug out of the ground: `rawiron` 4.5,
+`rawcoal` 5.3, `oil` 40, `uranium` 5.2/4.2, `explosives` 15/13. Raising it on an
+ore makes everything downstream dearer, because the mine's output is priced from
+it and the concentrator's from the mine's. It does **not** lift a resource off
+zero on its own.
+
+**`[price]` is the finished price**, record `+0x58` and `+0x5C` — what the trade
+window quotes, times `1.05` to buy and `0.95` to sell. This is the half that
+fixes a zero, and the only thing that gives a value to a resource no building
+produces. A resource that *is* produced does not need it.
+
+### Where they are written
+
+One inline hook, on the pass itself, and the two halves are on opposite sides of
+it:
+
+- **base before**, because the solver reads `+0x78`/`+0x7C` on its way in;
+- **price after**, because the pass overwrites `+0x58`/`+0x5C` on its way out.
+
+Doing it anywhere else means racing whatever wrote last. A save carries
+`$Economy_Base*` and puts the game's own numbers back into the record on load,
+and a third pass at `0x2FB390` multiplies every non-zero base by a random walk
+twice a period — so a value written once at arm time would be gone by the first
+recompute. Written here it is re-applied every time and is the last word.
+
+The cost of that is worth stating: **a declared base does not drift and a
+declared price does not respond to its chain.** Both are pinned.
+
+### Reading the table
+
+`price_report = 1` in `[resources]` prints every declared resource after each
+recompute:
+
+```
+price     copper_ore                 7.09 RUB       7.88 USD   base 4.50 / 4.50   kind 0
+price     sand                       0.00 RUB       0.00 USD   base 0.00 / 0.00   kind 0
+```
+
+`0.00` with any base at all means no building type produces it. `kind` is the
+record's `+0x44`: `0` raw, `1` manufactured, `2` consumer good, negative for the
+five the pass special-cases.
+
 ## Growing the array
 
 Six mod resources fit in the engine's own allocation — slots 57 to 62. **The
@@ -261,6 +359,8 @@ Symptoms and causes:
 | `no room at index N` | `resource_capacity` is `-1`, or the reallocation failed — the line says which |
 | `cached record pointer(s) rebased` | the array moved later than it should have. Nothing is broken, but the ordering in `EnsureArmed` has changed and is worth checking |
 | storage shows `0.00 of 0.00 t` | transport class mismatch between storage and template |
+| price is `0.00` in the trade table | nothing produces the resource — the solver never reaches the base price. Force it in `[price]` |
+| `[base_price]` changes nothing | the resource is unproduced (see above), or `hook` is not 2, or `price_hook` is 0 |
 | caption is the template's | no caption given, or `GetString` hook failed to install |
 | icon is a random image | icon file missing, or the VFS did not serve it — check for `vfs fopen` in the log |
 | crash on the asset worker thread | cargo models missing |
