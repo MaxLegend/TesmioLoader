@@ -1,3 +1,5 @@
+[English](README.md) | [Русский](README_RU.md) | [简体中文](README_zh-CN.md)
+
 ## A new era of modding begins here
 
 **Hello, comrade!**
