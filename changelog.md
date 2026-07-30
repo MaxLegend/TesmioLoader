@@ -1,0 +1,28 @@
+## Changelog
+
+---
+
+*Update! - v. b0.3.2*
+Added version control - the game will no longer crash if the plugin version does not match the launcher version - it will notify you of this during the initialization phase.
+
+---
+
+*Update! - v. b0.3.1*
+Minor fixes. Added a launcher logo. Fixed a save error causing crashes due to deposits.dll.
+
+---
+
+*Update! - v. b0.3*
+The launcher now has a window. It shows where the game file was found, with a Browse button if it was found incorrectly, and a checkbox for each plugin. Uncheck it, and the plugin will remain on disk but will not load, so you can disable this feature without deleting anything. Your choice is remembered.
+Critical bugs in the resource and deposit plugins have also been fixed, and tooltips have been added to custom buttons.
+
+---
+
+*Update! - v. a0.2.1*
+Minor fixes and refactoring
+
+---
+
+*Update! - v. a0.2*
+The loader has been updated to version a0.2—the code has been completely refactored and the architecture has been changed to ensure greater unification across separate plugins. If you have already installed the loader, please completely delete this folder and install the updated version.
+The loader is now separated from the code, allowing you to install functions separately—the resource plugin, the deposit plugin, or the depletion plugin.

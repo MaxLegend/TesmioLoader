@@ -1,5 +1,7 @@
 [English](README.md) | [Русский](README_RU.md) | [简体中文](README_zh-CN.md)
 
+[Changelog](changelog.md) | [Журнал обновлений](changelog_ru.md)
+
 ## A new era of modding begins here
 
 **Hello, comrade!**
