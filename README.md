@@ -2,6 +2,8 @@
 
 [Changelog](changelog.md) | [Журнал обновлений](changelog_ru.md)
 
+[Documentation](https://maxlegend.github.io/TesmioLoaderDocs/#/getting-started) | [Документация](https://maxlegend.github.io/TesmioLoaderDocs/#/getting-started/RU)
+
 ## A new era of modding begins here
 
 **Hello, comrade!**
