@@ -1567,13 +1567,41 @@ static HANDLE OpenLog(const char* name)
                        NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
 }
 
+// g_baseDir is "<...>\tesmioloader\build" (the folder tesmioloader.dll lives
+// in) when run from a source checkout, or wherever a distributed copy was
+// unpacked to otherwise. The checked-in assets live in "<...>\tesmioloader\vfs",
+// one level up from build\ - so a vfs folder is looked for there first, and
+// only a plain "vfs" folder beside the dll itself (baseDir\vfs) is used as the
+// fallback, for a distribution that ships build\ on its own with vfs inside
+// it. No link of any kind is required between the two; whichever one exists
+// is read directly, so there is nothing to fall out of sync.
+static void ResolveVfsRoot()
+{
+    char parent[MAX_PATH];
+    _snprintf_s(parent, sizeof(parent), _TRUNCATE, "%s", g_baseDir);
+    char* slash = strrchr(parent, '\\');
+    if (slash)
+    {
+        *slash = 0;
+        char sibling[MAX_PATH];
+        _snprintf_s(sibling, sizeof(sibling), _TRUNCATE, "%s\\vfs", parent);
+        DWORD attr = GetFileAttributesA(sibling);
+        if (attr != INVALID_FILE_ATTRIBUTES && (attr & FILE_ATTRIBUTE_DIRECTORY))
+        {
+            _snprintf_s(g_vfsRoot, sizeof(g_vfsRoot), _TRUNCATE, "%s", sibling);
+            return;
+        }
+    }
+    _snprintf_s(g_vfsRoot, sizeof(g_vfsRoot), _TRUNCATE, "%s\\vfs", g_baseDir);
+}
+
 static void Init()
 {
     InitializeCriticalSection(&g_lock);
 
     GetModuleFileNameA(g_self, g_baseDir, MAX_PATH);
     if (char* s = strrchr(g_baseDir, '\\')) *s = 0;
-    _snprintf_s(g_vfsRoot, sizeof(g_vfsRoot), _TRUNCATE, "%s\\vfs", g_baseDir);
+    ResolveVfsRoot();
     _snprintf_s(g_iniPath, sizeof(g_iniPath), _TRUNCATE, "%s\\tesmioloader.ini", g_baseDir);
 
     ReadConfig();

@@ -71,7 +71,5 @@ if not exist build\tesmioloader.ini (
 ) else (
     echo [build] build\tesmioloader.ini kept - delete it to take the repo defaults
 )
-if not exist build\vfs mklink /J build\vfs vfs >nul 2>&1
-
 echo [build] ok -^> build\tesmiolauncher.exe
 endlocal
