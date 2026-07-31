@@ -2,6 +2,11 @@
 
 ---
 
+*Update! - v. b0.3.3*
+A cross-reference bug that was used during development and accidentally made it into the release has been fixed. This was the reason why many users often failed to search for icons and resources, even though they were physically located where they should have been.
+
+---
+
 *Update! - v. b0.3.2*
 Added version control - the game will no longer crash if the plugin version does not match the launcher version - it will notify you of this during the initialization phase.
 
