@@ -54,8 +54,22 @@
 // <name>.dll.sig beside its DLL is the exact bytes Tesmio built - everything
 // else is marked in the window rather than trusted, because provenance is the
 // one claim a third-party build cannot forge without the private key.
-#include "tesmio_sign.h"
-#include "tesmio_pubkey.h"
+//
+// Both headers are OPTIONAL: a source drop without the signing machinery
+// still compiles, into a launcher that simply never mentions signatures -
+// CheckPluginSignature reports TSM_SIG_NONE for everything and PluginSigNote
+// stays empty, so no plugin is accused of being "not from Tesmio" by a build
+// that could not have recognised a Tesmio signature anyway.
+#if defined(__has_include)
+#  if __has_include("tesmio_sign.h") && __has_include("tesmio_pubkey.h")
+#    define TSM_LAUNCHER_SIGNING 1
+#    include "tesmio_sign.h"
+#    include "tesmio_pubkey.h"
+#  endif
+#endif
+#ifndef TSM_LAUNCHER_SIGNING
+#  define TSM_LAUNCHER_SIGNING 0
+#endif
 
 #pragma comment(lib, "user32.lib")
 #pragma comment(lib, "gdi32.lib")
@@ -498,6 +512,7 @@ static unsigned char* ReadBinary(const wchar_t* path, size_t* outLen)
 // this binary was built with. The signature covers the DLL exactly as it sits
 // on disk, so editing the file - one byte is enough - turns a valid seal into
 // TSM_SIG_BAD, while deleting the .sig turns it into the honest TSM_SIG_NONE.
+#if TSM_LAUNCHER_SIGNING
 static int CheckPluginSignature(const wchar_t* dllPath)
 {
     // A public blob with the wrong magic means this launcher was built without
@@ -541,6 +556,12 @@ static int CheckPluginSignature(const wchar_t* dllPath)
     free(sigFile);
     return result;
 }
+#else
+// No signing headers at build time: nothing can be verified, and NONE is the
+// one answer that never lies - PluginSigNote below turns it into silence
+// rather than into "not from Tesmio".
+static int CheckPluginSignature(const wchar_t*) { return TSM_SIG_NONE; }
+#endif
 
 // Empty when the plugin's own reported version matches this build of the
 // loader. Otherwise the same two rejection reasons LoadPlugins logs -
@@ -561,28 +582,36 @@ static void PluginWarning(const PluginEntry* e, wchar_t* out, size_t n)
 
 // The provenance half of a plugin's label. A valid seal is stated; a missing
 // one is stated too, because an unmarked foreign DLL and a genuine Tesmio
-// build would otherwise look identical in the window.
+// build would otherwise look identical in the window. Empty when this binary
+// was built without the signing headers - then there is nothing to state.
 static void PluginSigNote(const PluginEntry* e, wchar_t* out, size_t n)
 {
     out[0] = 0;
+#if TSM_LAUNCHER_SIGNING
     switch (e->sig)
     {
     case TSM_SIG_OK:  wcscpy_s(out, n, L"signed by Tesmio"); break;
     case TSM_SIG_BAD: wcscpy_s(out, n, L"SIGNATURE INVALID - not from Tesmio"); break;
     default:          wcscpy_s(out, n, L"not from Tesmio"); break;
     }
+#else
+    (void)e; (void)n;
+#endif
 }
 
 // Everything the window and --find have to say about a plugin, in one string:
 // whose signature it carries, then whether this loader will initialise it.
+// Can come back empty, and both callers then print the bare file name.
 static void PluginNote(const PluginEntry* e, wchar_t* out, size_t n)
 {
     wchar_t sig[96], warn[96];
     PluginSigNote(e, sig, _countof(sig));
     PluginWarning(e, warn, _countof(warn));
 
-    if (warn[0])
+    if (sig[0] && warn[0])
         _snwprintf_s(out, n, _TRUNCATE, L"%s, %s", sig, warn);
+    else if (warn[0])
+        wcscpy_s(out, n, warn);
     else
         wcscpy_s(out, n, sig);
 }
@@ -1025,7 +1054,10 @@ wchar_t windowTitle[128];
         PluginNote(e, note, _countof(note));
 
         wchar_t label[256];
-        _snwprintf_s(label, _countof(label), _TRUNCATE, L"%s   [%s]", e->file, note);
+        if (note[0])
+            _snwprintf_s(label, _countof(label), _TRUNCATE, L"%s   [%s]", e->file, note);
+        else
+            wcscpy_s(label, _countof(label), e->file);
 
         e->box = Child(hwnd, L"BUTTON", label, BS_AUTOCHECKBOX | WS_TABSTOP,
                        pad + 26, groupY + 18 + rowH + i * 20,
@@ -1158,8 +1190,12 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
         {
             wchar_t note[192];
             PluginNote(&g_plug[i], note, _countof(note));
-            Msg(L"plugin %-20s %-3s   [%s]", g_plug[i].file,
-                g_plug[i].on ? L"on" : L"off", note);
+            if (note[0])
+                Msg(L"plugin %-20s %-3s   [%s]", g_plug[i].file,
+                    g_plug[i].on ? L"on" : L"off", note);
+            else
+                Msg(L"plugin %-20s %s", g_plug[i].file,
+                    g_plug[i].on ? L"on" : L"off");
         }
         Msg(L"game   %s", found[0] ? found : L"NOT FOUND");
         return found[0] ? 0 : 1;
