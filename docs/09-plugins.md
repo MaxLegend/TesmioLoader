@@ -254,6 +254,48 @@ Three ways to switch a feature off, in order of how big the hammer is: its own
 `[plugins]` key, which does not load it at all; and `plugins = 0`, which skips
 every plugin.
 
+## Signing
+
+The launcher says whose plugin each DLL is. A signed plugin ships
+`<name>.dll.sig` beside its DLL — a `TSMSIG1` header and an ECDSA P-256
+signature over the SHA-256 of the file exactly as it sits on disk — and the
+launcher verifies it against the public key compiled into it from
+`src/tesmio_pubkey.h`. Three states, all three shown in the window and in
+`--find`:
+
+| Label | Meaning |
+|---|---|
+| `signed by Tesmio` | the signature verifies — these bytes are exactly what the key holder built |
+| `not from Tesmio` | no `.sig` file — a third-party build, or a build made without the key |
+| `SIGNATURE INVALID - not from Tesmio` | a `.sig` exists and does not match the bytes; painted red |
+
+The point is provenance, not sandboxing — a plugin runs in the game's address
+space and can do anything the loader can, signature or not, so **the mark does
+not block anything**; foreign plugins still load. What a valid signature does
+say is the one thing a third party cannot fake: editing the source and
+building your own plugin produces a DLL you cannot sign as Tesmio, because
+that needs the private key. One changed byte turns a valid seal into
+`SIGNATURE INVALID`; deleting the `.sig` is the honest way to be "not from
+Tesmio".
+
+The private key is `tools/signing/tsm_private.bin`, a 104-byte CNG blob made
+once by `build\tsmsign.exe genkey`. **It is the one file a release must never
+ship** — whoever has it can sign as Tesmio, and there is no revocation. Keep a
+backup somewhere outside the tree; losing it means generating a new pair,
+regenerating `tesmio_pubkey.h` (`tsmsign pubkey`), and every old signature
+becoming invalid. The public header is safe to commit — it is public in the
+cryptographic sense.
+
+`build.bat` signs every plugin it builds when the key file is present, so a
+rebuilt DLL never sits beside a stale signature, and a build on a machine
+without the key simply ships unsigned. `tsmsign verify <key> <dll>` checks a
+`.sig` by hand, and `tsmsign sign` re-signs a single file.
+
+The crypto is Windows CNG (`bcrypt.dll`), which ships with every Windows this
+project targets, so neither side gains a dependency. The shared format and the
+primitives are `src/tesmio_sign.h`; the launcher is the only consumer of
+`tesmio_pubkey.h`.
+
 ## What goes wrong, and what the log says
 
 | Line | Meaning |

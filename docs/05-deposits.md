@@ -167,6 +167,43 @@ globals, because the cave is guaranteed within `rel32` of the code reading it
 while a DLL's data is wherever Windows put the module. `LoadExtraMaps` writes it
 at every world load, and clears it when one starts.
 
+### The scan's bracket
+
+Handing the sampler a texture is not enough: the sampler reads a CPU-side copy,
+and that copy exists only between `TextureAccessOpen` and `TextureAccessClose`.
+`0x1DD190` brackets per deposit type, and the chain this plugin splices into
+sits *inside* the bracket:
+
+| Site | Check | Texture |
+|---|---|---|
+| `0x1DD458` | type ≤ 2 | open `resourcemap` |
+| `0x1DD474` | type 6–7 | open `resourcemap2` |
+| `0x1DD499` | type 3 | `MaskTextureOpen(terrain)` |
+| `0x1DDE08` | type 3 | `MaskTextureClose(terrain)` |
+| `0x1DDE25` | type ≤ 2 | close `resourcemap` |
+| `0x1DDE45` | type 6–7 | close `resourcemap2` |
+
+A mod type (10 and up) matches none of them, and for the first year of this
+project that meant copper was sampled through a texture that was never mapped.
+What hid it is that `TextureAccessClose` never clears the mapped-texel pointer
+at `tex+0x158`: one paint of the channel in the editor leaves a stale, still
+dereferenceable address behind, and the scan then reads last paint's staging
+copy — which the close had just copied back from, so it is even correct. On a
+map where the channel was never painted the pointer is zero and
+`TextureAccesGetTexel` dereferences it: crash, fault address
+`(x + rowpitch/4 · y) · 4`. That is the "place or hover the mine before the
+deposit is painted" crash, and it is [07-pitfalls.md](07-pitfalls.md) now.
+
+So `0x1DD458` and `0x1DDE25` are patch sites like the mask's: a cave checks
+our types first — opening the game object's own map for the engine's two, or
+the cave qword for an extra one, with a null test so an unloaded map skips the
+call — then reproduces the displaced type ≤ 2 block and rejoins at
+`0x1DD474`/`0x1DDE45`. The rejoin re-reads the type field, so the open cave
+does not have to preserve `EAX` across the call, and a mod type matches
+nothing downstream — no double-open. Verified against 11/15 bytes (the
+displaced instruction plus the build's own rip-relative `MOV` after it) and
+patched only when a deposit lives on a resource map, both or neither.
+
 ### Painting
 
 The texel writer decodes bit 2 of its channel index into one of exactly two

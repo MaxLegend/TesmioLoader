@@ -128,6 +128,14 @@ struct DepositDef
     int   editorColumn;    // grid column, counting on past the vanilla five
     BYTE* toolPaint;
     BYTE* toolErase;
+
+    // The minimap icon's resource record, resolved once rather than once per
+    // frame. iconFailed latches the first miss: the resource set is fixed for
+    // the session, so a name that found nothing once would find nothing on
+    // every later frame too - and each of those misses costs a game.ERROR line
+    // in the game's own log, which is what bled frame rate with the minimap open.
+    BYTE* iconRecord;
+    int   iconFailed;
 };
 
 static DepositDef g_dep[MAX_DEPOSITS];
@@ -281,6 +289,10 @@ static int g_extraCount;
 // patch sites that bracket that texture are never touched.
 static int g_terrainCount;
 
+// How many live on a resource map (the engine's two or an extra one). 0 means
+// the scan's TextureAccess bracket needs no new cases either.
+static int g_mapCount;
+
 // "resourcemap", "resourcemap2", "resourcemap3"... for the log and for paths.
 static const char* MapName(int map, char* buf, size_t n)
 {
@@ -417,8 +429,12 @@ static void ValidateDeposits()
         for (int c = 0; c < 4; c++) d->vector[c] = (c == d->component) ? 1.0f : 0.0f;
 
         if (d->map == DEP_MAP_TERRAIN) g_terrainCount++;
-        else if (d->map >= DEP_MAP_EXTRA && d->map - DEP_MAP_EXTRA + 1 > g_extraCount)
-            g_extraCount = d->map - DEP_MAP_EXTRA + 1;
+        else
+        {
+            g_mapCount++;
+            if (d->map >= DEP_MAP_EXTRA && d->map - DEP_MAP_EXTRA + 1 > g_extraCount)
+                g_extraCount = d->map - DEP_MAP_EXTRA + 1;
+        }
     }
 
     // The minimap row and the Resources tab both carry five vanilla entries; the
@@ -535,10 +551,50 @@ static void ValidateDeposits()
 #define P_TERRAIN_OFF      0xED8      // gameobj -> C3D_TERRAIN
 #define P_TERRAIN_MASK     0x158      // C3D_TERRAIN -> its material mask texture
 
+// The resource maps need the same bracket, and every mod type was missing it.
+//
+// The scan brackets the texture it is about to sample by deposit type: types
+// 0-2 open resourcemap, types 6-7 open resourcemap2, type 3 opens the terrain
+// mask (the sites above), and each is closed after the loop. A mod type -
+// 10 and up - matches none of the checks, so the sampler's GetTexel read
+// [tex+0x158], the mapped-texel pointer, while it was still zero: crash at a
+// fault address of (row pitch/4 * y + x) * 4. What masked the defect for a
+// painted map is TextureAccessClose never clearing that pointer: one editor
+// paint of the channel leaves a stale, still-dereferenceable address behind,
+// and the scan then reads last paint's staging copy and happens to be right.
+//
+//   1DD458  83 F8 02               CMP EAX,2            <- open, types 0-2
+//   1DD45B  77 17                  JA  1DD474
+//   1DD45D  48 8B 05 ..            MOV RAX,[gameobj]
+//   1DD464  48 8B 88 00 0F 00 00   MOV RCX,[RAX+0xF00]
+//   1DD46B  48 8B 01               MOV RAX,[RCX]
+//   1DD46E  FF 90 80 00 00 00      CALL [RAX+0x80]     ; TextureAccessOpen
+//
+//   1DDE25  83 BE 68 03 00 00 02   CMP [RSI+0x368],2    <- close, types 0-2
+//   1DDE2C  77 17                  JA  1DDE45
+//   ...                            ... same, [RAX+0x90] ; TextureAccessClose
+//
+// Both sites are heads of their block and reached by fall-through only. The
+// cave puts our types in front of the displaced check, exactly as the mask
+// bracket does; the rejoin re-reads the type, so a clobbered EAX costs nothing.
+#define P_MAP_OPEN_SITE    0x1DD458
+#define P_MAP_OPEN_NEXT    0x1DD474   // the types 6-7 check, which re-reads EAX
+#define P_MAP_CLOSE_SITE   0x1DDE25
+#define P_MAP_CLOSE_NEXT   0x1DDE45   // the types 6-7 close check
+#define P_TEX_OPEN         0x80       // TextureAccessOpen,  vtable slot 16
+#define P_TEX_CLOSE        0x90       // TextureAccessClose, vtable slot 18
+
 static const BYTE kParserOrig[]   = { 0x48, 0x8D, 0x15, 0xF1, 0xAA, 0x77, 0x00 };
 static const BYTE kDispatchOrig[] = { 0x83, 0xBE, 0x68, 0x03, 0x00, 0x00, 0x06 };
 static const BYTE kRadiusOrig[]   = { 0x83, 0xF9, 0x09, 0x75, 0x09 };
 static const BYTE kMaskOrig[]     = { 0x83, 0xBE, 0x68, 0x03, 0x00, 0x00, 0x03 };  // both bracket sites
+// Verified past the bytes the jump replaces, so the check pins the site, not
+// just five common encodings: the MOV that follows carries the build's own
+// rip-relative displacement to the game object.
+static const BYTE kMapOpenOrig[]  = { 0x83, 0xF8, 0x02, 0x77, 0x17,
+                                      0x48, 0x8B, 0x05, 0x8C, 0x6D, 0x7B, 0x00 };
+static const BYTE kMapCloseOrig[] = { 0x83, 0xBE, 0x68, 0x03, 0x00, 0x00, 0x02, 0x77, 0x17,
+                                      0x48, 0x8B, 0x05, 0xBB, 0x63, 0x7B, 0x00 };
 
 // ---------------------------------------------------------------- maps past the engine's two
 //
@@ -970,6 +1026,7 @@ struct Emit
     // a variable length, so these are all rel32: a short jcc would silently go
     // out of range once enough deposits were declared.
     BYTE* jne32()                     { b(0x0F); b(0x85); BYTE* at = p; d32(0); return at; }
+    BYTE* je32()                      { b(0x0F); b(0x84); BYTE* at = p; d32(0); return at; }
     void  land(BYTE* at)
     {
         if (overflow || !at) return;
@@ -1068,6 +1125,73 @@ static void EmitMaskBracket(Emit& e, DWORD iatRva, BYTE* rejoin)
     e.b(0xE9); e.rel32(rejoin);
 }
 
+// One half of the resource-map bracket: `if (type is one of ours) Open/Close
+// (its map)`, chained in front of the displaced types 0-2 block, which is then
+// reproduced verbatim. The texture is the game object's own for the engine's
+// two maps - loaded exactly as the vanilla cases load it - or the cave qword
+// LoadExtraMaps maintains for one of ours; a NULL there skips the call rather
+// than dereferencing it, which leaves the later sample to fail the way an
+// unloaded map already fails. After our call the flow rejoins *before* the
+// vanilla checks, not after them: the rejoin re-reads the type field, and a
+// mod type matches nothing downstream, so there is no double-open to fear and
+// no need to preserve EAX across the call.
+static void EmitMapBracket(Emit& e, DWORD vtblOff, BYTE* rejoin, bool openSite)
+{
+    for (int i = 0; i < g_depCount; i++)
+    {
+        const DepositDef* d = &g_dep[i];
+        if (d->map == DEP_MAP_TERRAIN) continue;
+
+        // Same bounded indexing the dispatch emitter uses - DEP_MAP_TERRAIN is
+        // far outside the map numbers and is filtered above, but keep the shape.
+        int k = (d->map >= DEP_MAP_EXTRA && d->map < MAX_MAPS)
+              ? d->map - DEP_MAP_EXTRA : -1;
+
+        e.b(0x83); e.b(0xBE); e.d32(P_DEP_TYPE_FIELD); e.b((BYTE)d->type);  // cmp [rsi+0x368],type
+        BYTE* next = e.jne32();
+
+        if (k >= 0)
+        {
+            e.b(0x48); e.b(0x8B); e.b(0x0D); e.rel32((BYTE*)g_extra[k].caveSlot); // mov rcx,[slot]
+            e.b(0x48); e.b(0x85); e.b(0xC9);                                // test rcx,rcx
+            BYTE* noTex = e.je32();                                         // no map loaded - skip
+            e.b(0x48); e.b(0x8B); e.b(0x01);                                // mov rax,[rcx]
+            e.b(0xFF); e.b(0x90); e.d32(vtblOff);                           // call [rax+slot]
+            e.land(noTex);
+        }
+        else
+        {
+            e.b(0x48); e.b(0x8B); e.b(0x05); e.rel32(g_exeBase + P_GAMEOBJ);// mov rax,[gameobj]
+            e.b(0x48); e.b(0x8B); e.b(0x88);
+            e.d32(d->map == DEP_MAP_2 ? P_MAP2_OFF : P_MAP1_OFF);           // mov rcx,[rax+map]
+            e.b(0x48); e.b(0x8B); e.b(0x01);                                // mov rax,[rcx]
+            e.b(0xFF); e.b(0x90); e.d32(vtblOff);                           // call [rax+slot]
+        }
+        e.b(0xE9); e.rel32(rejoin);
+        e.land(next);
+    }
+
+    // The displaced types 0-2 block, verbatim in everything but the JA, which
+    // takes the near form because the target is behind us in the original.
+    // The open site holds the type in EAX on entry (our cases never touch it);
+    // the close site re-reads the field instead. Both close resourcemap, the
+    // map of types 0-2.
+    if (openSite)
+    {
+        e.b(0x83); e.b(0xF8); e.b(0x02);                                    // cmp eax,2
+    }
+    else
+    {
+        e.b(0x83); e.b(0xBE); e.d32(P_DEP_TYPE_FIELD); e.b(0x02);           // cmp [rsi+0x368],2
+    }
+    e.b(0x0F); e.b(0x87); e.rel32(rejoin);                                  // ja rejoin
+    e.b(0x48); e.b(0x8B); e.b(0x05); e.rel32(g_exeBase + P_GAMEOBJ);        // mov rax,[gameobj]
+    e.b(0x48); e.b(0x8B); e.b(0x88); e.d32(P_MAP1_OFF);                     // mov rcx,[rax+0xF00]
+    e.b(0x48); e.b(0x8B); e.b(0x01);                                        // mov rax,[rcx]
+    e.b(0xFF); e.b(0x90); e.d32(vtblOff);                                   // call [rax+slot]
+    e.b(0xE9); e.rel32(rejoin);
+}
+
 // One case of the search-radius table. The value is copied out of .rdata at
 // patch time rather than referenced, so a deposit that borrows the ore radius
 // keeps whatever the game's own constant is.
@@ -1093,6 +1217,8 @@ static bool PatchDepositType()
     BYTE* radiusSite   = g_exeBase + P_RADIUS_SITE;
     BYTE* maskOpenSite = g_exeBase + P_MASK_OPEN_SITE;
     BYTE* maskCloseSite= g_exeBase + P_MASK_CLOSE_SITE;
+    BYTE* mapOpenSite  = g_exeBase + P_MAP_OPEN_SITE;
+    BYTE* mapCloseSite = g_exeBase + P_MAP_CLOSE_SITE;
 
     if (memcmp(parserSite,   kParserOrig,   sizeof(kParserOrig))   != 0 ||
         memcmp(dispatchSite, kDispatchOrig, sizeof(kDispatchOrig)) != 0 ||
@@ -1100,6 +1226,27 @@ static bool PatchDepositType()
     {
         Logf("patch  site bytes differ from build v1.1.1.7 - refusing to patch");
         return false;
+    }
+
+    // Same treatment as the terrain-mask bracket below: checked only when a
+    // deposit on a resource map will use it, and a mismatch drops those
+    // deposits rather than corrupting the scan. An unbracketed resource map is
+    // worse than an unbracketed mask - the sampler dereferences a null mapped
+    // pointer and takes the process down (see the comment at P_MAP_OPEN_SITE) -
+    // so there is no "patch it anyway" option here.
+    if (g_mapCount &&
+        (memcmp(mapOpenSite,  kMapOpenOrig,  sizeof(kMapOpenOrig))  != 0 ||
+         memcmp(mapCloseSite, kMapCloseOrig, sizeof(kMapCloseOrig)) != 0))
+    {
+        Logf("patch  resource-map bracket bytes differ from build v1.1.1.7 - "
+             "%d map deposit(s) dropped", g_mapCount);
+        int kept = 0;
+        for (int i = 0; i < g_depCount; i++)
+            if (g_dep[i].map == DEP_MAP_TERRAIN) g_dep[kept++] = g_dep[i];
+        g_depCount  = kept;
+        g_mapCount  = 0;
+        g_extraCount = 0;
+        if (!g_depCount) { Logf("patch  nothing left to splice"); return false; }
     }
 
     // Checked separately and only when they will be used, so a configuration
@@ -1225,6 +1372,20 @@ static bool PatchDepositType()
         EmitMaskBracket(e, P_MASK_CLOSE_IAT, g_exeBase + P_MASK_CLOSE_NEXT);
     }
 
+    // The resource-map bracket, both halves, under the same rule. Without it
+    // every mod type samples through a never-mapped texture - the crash this
+    // is for - and the "it worked after painting" behaviour was a stale
+    // pointer TextureAccessClose happens to leave behind, not a working scan.
+    BYTE* mapOpenCave  = NULL;
+    BYTE* mapCloseCave = NULL;
+    if (g_mapCount)
+    {
+        mapOpenCave = e.p;
+        EmitMapBracket(e, P_TEX_OPEN,  g_exeBase + P_MAP_OPEN_NEXT,  true);
+        mapCloseCave = e.p;
+        EmitMapBracket(e, P_TEX_CLOSE, g_exeBase + P_MAP_CLOSE_NEXT, false);
+    }
+
     // Checked before a single byte of the executable is touched, so a cave that
     // did not fit leaves the process exactly as it was.
     if (e.overflow)
@@ -1236,12 +1397,18 @@ static bool PatchDepositType()
     g_caveUsed = (SIZE_T)(e.p - g_cave);
 
     // --- redirect all three sites ----------------------------------------
+    // len is how many bytes the jump and its NOP padding overwrite; the verify
+    // constants above may run longer, to pin the site by the instruction that
+    // follows. At the map close site only the CMP is replaced - its JA stays
+    // behind as dead code the cave never rejoins into.
     struct { BYTE* site; BYTE* cave; size_t len; const char* what; } jumps[] = {
         { parserSite,    parserCave,    sizeof(kParserOrig),   "parser"     },
         { dispatchSite,  dispatchCave,  sizeof(kDispatchOrig), "dispatch"   },
         { radiusSite,    radiusCave,    sizeof(kRadiusOrig),   "radius"     },
         { maskOpenSite,  maskOpenCave,  sizeof(kMaskOrig),     "mask open"  },
         { maskCloseSite, maskCloseCave, sizeof(kMaskOrig),     "mask close" },
+        { mapOpenSite,   mapOpenCave,   5,                     "map open"   },
+        { mapCloseSite,  mapCloseCave,  7,                     "map close"  },
     };
 
     for (int i = 0; i < (int)(sizeof(jumps) / sizeof(jumps[0])); i++)
@@ -1269,9 +1436,9 @@ static bool PatchDepositType()
              g_dep[i].type, g_dep[i].token,
              MapName(g_dep[i].map, mapName, sizeof(mapName)), g_dep[i].component);
     }
-    Logf("patch  cave at %p, %zu of %d bytes used (parser %p, dispatch %p, radius %p, mask %p/%p)",
+    Logf("patch  cave at %p, %zu of %d bytes used (parser %p, dispatch %p, radius %p, mask %p/%p, map %p/%p)",
          g_cave, g_caveUsed, CAVE_SIZE, parserCave, dispatchCave, radiusCave,
-         maskOpenCave, maskCloseCave);
+         maskOpenCave, maskCloseCave, mapOpenCave, mapCloseCave);
     return true;
 }
 // ---------------------------------------------------------------- minimap deposit buttons
@@ -1360,6 +1527,7 @@ static const BYTE kMinimapRowPrologue[] = {
 #define G_CLICK_FLAG      0xA54E91   // nonzero for one frame on a real click
 #define G_MOUSE_OBJ       0xA54B90   // C3D_INPUT instance
 #define G_RES_SELF        0x9D4F10   // "self" object every ResourceGet call in this UI uses
+#define G_RES_VECTOR      0x9E11C0   // the resource vector records live in: begin, end, capacity
 #define G_CLIP_HELPER_OBJ 0x9DFCC0   // passed to the per-icon clip-rect helper
 #define G_DPI             0x992088
 #define G_ROW_X0          0x90A9A0
@@ -1638,6 +1806,42 @@ static void DrawDepositOverlay(BYTE* param_1, const DepositDef* d)
 // verify the ABI of, and skipping it costs only the text label under the
 // cursor - the icon, its hover/selected tint and the click itself all work
 // without it.
+// The deposit's icon resource record, resolved once instead of once per frame.
+// What this removes is not the lookup - a vector walk is cheap - but the miss:
+// an `icon` naming a resource nobody declared falls through to the game's own
+// resolver, which writes `game.ERROR ResourceGet - not found X` per call, and
+// at one call per button per frame the game's log machinery becomes the
+// hottest thing on the frame - the longer the minimap stays open, the slower
+// every later frame gets. A miss is therefore latched: the resource set is
+// fixed for the session, so a name that found nothing once would find nothing
+// on every later frame too. The hit is cached as well, but re-validated
+// against the resource vector's current span, because a map load rebuilds
+// that vector and a record from the previous world is not safe to follow.
+static BYTE* DepositIconRecord(DepositDef* d)
+{
+    if (!d->icon[0] || d->iconFailed) return NULL;
+
+    if (d->iconRecord)
+    {
+        const BYTE* const* v = (const BYTE* const*)(g_exeBase + G_RES_VECTOR);
+        if (v[0] && (const BYTE*)d->iconRecord >= v[0] && (const BYTE*)d->iconRecord < v[1])
+            return d->iconRecord;
+        d->iconRecord = NULL;          // the world it came from is gone - resolve again
+    }
+
+    t_ResourceGet resourceGet = (t_ResourceGet)(g_exeBase + P_RESOURCEGET);
+    BYTE* record = (BYTE*)resourceGet(g_exeBase + G_RES_SELF, (void*)d->icon, NULL, NULL);
+    if (!ReadablePtr(record, 0x50))
+    {
+        d->iconFailed = 1;
+        Logf("minimap  \"%s\": icon resource \"%s\" not found - the button will draw "
+             "without an icon (declare it in plugins/resources.ini [list])", d->name, d->icon);
+        return NULL;
+    }
+    d->iconRecord = record;
+    return record;
+}
+
 static void DrawDepositButton(BYTE* param_1, DepositDef* d)
 {
     void* tech = *(void**)(g_exeBase + G_TECHNIQUE);
@@ -1688,9 +1892,8 @@ static void DrawDepositButton(BYTE* param_1, DepositDef* d)
     // draws it afterwards.
     if (hovered && g_MM_GetStringSlot && d->icon[0])
     {
-        t_ResourceGet resourceGet = (t_ResourceGet)(g_exeBase + P_RESOURCEGET);
-        BYTE* record = (BYTE*)resourceGet(g_exeBase + G_RES_SELF, (void*)d->icon, NULL, NULL);
-        if (ReadablePtr(record, RES_CAPTION_OFF + sizeof(int)))
+        BYTE* record = DepositIconRecord(d);
+        if (record && ReadablePtr(record, RES_CAPTION_OFF + sizeof(int)))
         {
             typedef void (*t_FormatWide)(void*, size_t, const wchar_t*, ...);
             t_MM_GetString getString = (t_MM_GetString)*g_MM_GetStringSlot;
@@ -1703,14 +1906,13 @@ static void DrawDepositButton(BYTE* param_1, DepositDef* d)
     }
 
     // the resource's own icon, straight out of its record - no art asset of
-    // our own needed
-    // The record comes out of a table the engine rebuilds at every map load,
-    // so it is checked before being followed rather than merely non-null.
+    // our own needed. The record is cached: a miss here was the per-frame
+    // ResourceGet storm that sank frame rate with the minimap open, and a hit
+    // is one pointer comparison per frame.
     if (d->icon[0])
     {
-        t_ResourceGet resourceGet = (t_ResourceGet)(g_exeBase + P_RESOURCEGET);
-        BYTE* record = (BYTE*)resourceGet(g_exeBase + G_RES_SELF, (void*)d->icon, NULL, NULL);
-        if (ReadablePtr(record, 0x50))
+        BYTE* record = DepositIconRecord(d);
+        if (record)
         {
             void* iconTex = *(void**)(record + 0x48);
             if (iconTex)

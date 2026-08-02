@@ -157,6 +157,21 @@ static const TsmDepositApi* D;
 #define MAP_EXTRA_MAX     8
 #define MAP_COUNT         (MAP_EXTRA_FIRST + MAP_EXTRA_MAX)
 
+// A map number for the log. MAP_EXTRA_FIRST is resourcemap3, so the digit in
+// the filename is the map number itself. `buf` is used only for those.
+static const char* MapName(int map, char* buf, size_t n)
+{
+    switch (map)
+    {
+        case MAP_RESOURCEMAP:  return "resourcemap ";
+        case MAP_RESOURCEMAP2: return "resourcemap2";
+        case MAP_TERRAIN:      return "terrain mask";
+        default:
+            _snprintf_s(buf, n, _TRUNCATE, "resourcemap%d", map);
+            return buf;
+    }
+}
+
 typedef void   (*t_MineTick)(void*, void*);
 typedef void   (*t_MinePanel)(void*, void*, void*);
 typedef void   (*t_PrintLeftUnicode)(void*, void*, float, float, unsigned long,
@@ -1029,12 +1044,17 @@ extern "C" __declspec(dllexport) int TsmPluginStart(void)
             g_panel = 0;
     }
 
-    static const char* kMapName[] = { "resourcemap ", "resourcemap2", "terrain mask" };
+    // map runs 0..MAP_COUNT-1, so the three-entry name table this replaces
+    // read past its end for every extra map (clay, gas - anything on
+    // resourcemap3 and up) and printed whatever the next bytes in .rdata were.
     for (int i = 0; i < g_depletableCount; i++)
+    {
+        char mapName[24];
         Logf("deplete  %-10s type %-3d %s component %d, %.0f t per saturated texel",
              g_depletable[i].name, g_depletable[i].type,
-             kMapName[g_depletable[i].map], g_depletable[i].component,
-             g_depletable[i].tonnesPerTexel);
+             MapName(g_depletable[i].map, mapName, sizeof(mapName)),
+             g_depletable[i].component, g_depletable[i].tonnesPerTexel);
+    }
     Logf("deplete  %d deposit type(s) will run out, map written every %.0f s",
          g_depletableCount, g_flushSeconds);
     return 0;

@@ -829,3 +829,126 @@ an awkward prologue, count the callers first:
 ```bash
 python tools/pe/xref.py SOVIET64.exe <rva>
 ```
+
+## A heuristic find without an invariant is a write into a stranger's struct
+
+`needs` finds a building type's storage vector by scanning the type descriptor
+for a `{begin, end, cap}` triple whose span divides by the storage stride and
+whose first entries "look like" storages — class in range, capacity positive.
+That bar is three field reads, and a 0x900-byte descriptor is long enough that
+a triple of pointers satisfies it **by accident**. The candidate that passed
+had a slot vector whose `begin` did not name readable memory at all; the first
+dereference faulted, and had the push path been reached instead it would have
+reallocated somebody else's memory and written a slot into it.
+
+What made it worse: the `__except` in the type-load hook logged
+"type storages disabled after a fault" and then **did not disable anything** —
+the flag it should have cleared did not exist. The same fault re-fired on every
+later type load, one exception per call, forever. A log line that promises a
+reaction is a claim the code has to keep; this one read like a guard and was a
+greeting.
+
+Two repairs, both cheap:
+
+- **Validate against an invariant the lookalike cannot fake.** A real storage's
+  slot vector is readable, a whole number of 16-byte slots, and every resource
+  pointer in it lands inside the engine's resource vector at the vector's own
+  stride. A found triple passes the first two by luck perhaps once; the third
+  never. The scan now reads the resource vector once and demands all three of
+  every candidate.
+- **A `__except` that says "disabled" must disable.** The type pass has its
+  own flag now, and the handler clears it. The other three handlers in the
+  same file had done this from the start; the fourth was written later, in the
+  same shape, minus the one line that mattered.
+
+The general lesson: when a search can return a false positive, the check that
+accepts it must be stronger than the check that finds it — and the strongest
+available check is always "do the pointers point where real ones point", not
+"do the fields hold plausible values".
+
+## A name table sized for today reads out of bounds tomorrow
+
+`depletion` logged each tracked deposit's map through
+`kMapName[3] = { "resourcemap ", "resourcemap2", "terrain mask" }`. Then
+`map = auto` deposits arrived — clay, gas — and their map numbers run 3 to 10.
+Every log line for one of them read a pointer past the end of the array and
+printed whatever string the next bytes of `.rdata` happened to be; one build
+printed `(null)`.
+
+A table indexed by a value another config controls is a pair that has to be
+maintained in lockstep, and nothing makes that happen. The fix is the form
+that cannot drift: a `switch` for the three named maps and `resourcemap%d`
+for the rest, which is also how the filenames are actually numbered.
+
+## A failed lookup once a frame is a frame-rate leak
+
+Reported as: with the minimap open, frame rate falls off a cliff — 40 FPS down
+to 8 over a few minutes, recovering the instant the minimap closes, and
+resuming from the same low value when it reopens. CPU load doubles while it is
+open. It never reproduced on a machine whose `plugins/resources.ini [list]`
+declared every resource the deposits reference — and that difference *was* the
+bug.
+
+`DrawDepositButton` resolved its icon by calling `ResourceGet(self, icon)` —
+fresh, every frame, twice for a hovered button. On a config where `sand`,
+`clay` and `gas` had deposit sections but no resource declarations, every one
+of those calls fell through to the game's own resolver, and the resolver logs
+`game.ERROR ResourceGet - not found X` on every miss. The captured log of the
+affected machine shows ~14 000 of those lines, in a per-frame cadence that
+tracks the reported slowdown exactly: 25 ms a frame when the minimap opens,
+33, 36, 54, 238 ms six minutes later. The per-line cost is constant; what
+grows is the game's own log machinery behind it.
+
+Two lessons:
+
+- **A UI path must never call a resolver that can fail.** The question "does
+  this resource exist" has a session-fixed answer; asking it 60 times a second
+  is never right, and asking a resolver whose failure mode is a log line turns
+  a missing ini entry into a performance bug rather than a missing icon. The
+  hit is now cached too — re-validated against the resource vector's span,
+  because a map load rebuilds that vector — and the miss is latched after one
+  warning of our own naming the ini section to fix.
+- **"Cannot reproduce" can mean the repro machine's config is wrong in a way
+  yours is not.** The degrading frame rate was a *symptom of a missing ini
+  line* the whole time. The log cadence — which lines repeat per frame, and
+  how the interval between them grows — was the measurement that found it.
+
+## A bracket you never added can look like a feature that works
+
+The first report of this one was the opposite of a bug report: copper mining
+worked. It crashed only *before* the deposit was painted — placing or even
+hovering the mine on an unpainted map took the process down at
+`C3DDLL64.dll+0x19096`, fault address a small number like `0x89C`.
+
+The scan at `0x1DD190` brackets its texture per deposit type — types 0–2 open
+`resourcemap`, 6–7 open `resourcemap2`, 3 opens the terrain mask — and the
+dispatch chain this plugin splices new types into sits *inside* that bracket.
+The chain gave copper (type 10) its texture and component; nobody gave it an
+open/close. `TextureAccesGetTexel` reads the mapped-texel pointer at
+`tex+0x158` with no null check, so on a never-painted map — where the texture
+was never opened — it dereferenced zero plus the texel offset. `0x89C` *is*
+`(x + rowpitch/4·y)·4`; the fault address decodes the coordinates.
+
+And the reason it "worked after painting": `TextureAccessClose` unmaps and
+releases the staging texture but **never clears `tex+0x158`**. One editor
+paint of the channel leaves a dangling pointer that still happens to
+dereference, into staging memory whose last contents the close had just copied
+back from — so the unbracketed scan then reads stale-but-correct data. A
+dangling pointer that returns the right answer is the most expensive kind of
+defect: it converts a missing bracket into a heisenbug whose trigger is "the
+player did not paint first".
+
+Lessons:
+
+- **A spliced case inherits the site's code, not its context.** The dispatch
+  case was modelled on the type-6 block instruction-for-instruction and was
+  correct as far as it went — but the block it imitates *relies on* a bracket
+  twenty basic blocks upstream, and that dependency is invisible at the splice
+  point. When a patch imitates one case of a chain, check what the chain's
+  other cases get from outside the chain.
+- **"Works after the user does X" is a state leak, not a feature.** The
+  difference between painted and unpainted was one qword of texture state, and
+  the correct fix was never to make the sampler tolerant — it was to give the
+  mod types the same open/close the vanilla types get, at the same two sites,
+  emitted per declared deposit exactly like the terrain-mask bracket already
+  was.

@@ -1,6 +1,11 @@
 # Ignore Files
+ghidra/
 ghidra/proj/
 build/
 tools/
+src/tesmio_pubkey.h
+src/tesmio_sign.h
 btfconvert/btfconvert.exe
 btfconvert/obj/
+tsmsign.obj
+идеи.txt

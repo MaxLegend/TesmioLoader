@@ -250,6 +250,27 @@ into `media_soviet\workshop_wip\` from `plugins\buildings.ini` and then does
 nothing for the rest of the process. It is a plugin because it is a feature, not
 because it needs anything from the host but the log and the config reader.
 
+### Save manifest
+
+A save written with mod content does not load without it — the resource count
+is part of the save format — and the game dies halfway through such a load
+without a word. So the loader leaves a note in every save it sees written:
+`tesmioloader.save.ini` next to `stats.ini`, listing the mod resources, mod
+deposits and declared buildings in effect at save time, and the plugins that
+were on.
+
+When the game reads a `stats.ini` back — browsing the load menu counts — the
+manifest beside it is compared against what is enabled now. Anything missing
+is logged, and a warning box lists it before the game can die on it: the one
+moment that information is still useful is before the load, not in the crash
+report after. The check lives in the host because it has to fire exactly when
+the plugin is off; one warning per save per session. `save_manifest = 0`
+turns the whole thing off.
+
+The buildings half checks the one thing the game itself checks: the folder
+under `workshop_wip`. A plugin switched off but a folder written last launch
+still loads, so the plugin's state is never asked.
+
 ### Crash reporting
 
 A vectored exception handler logs the faulting address as `module + rva`, the
@@ -281,6 +302,7 @@ everything a feature needs lives in that plugin's own ini.
 | `vfs` | enable file redirection |
 | `probe_map` | guard-page probe for the deposit map |
 | `probe_texel` | watch texel reads of the deposit maps |
+| `save_manifest` | write `tesmioloader.save.ini` into saves and warn on missing mods |
 | `plugins` | scan `plugins\` and load what is there |
 | `menu_patch` | append `menu_tag` to the main menu's version line |
 | `version` | this build's version, shown in the launcher's title bar |

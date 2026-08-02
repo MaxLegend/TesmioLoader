@@ -1,8 +1,21 @@
 @echo off
 setlocal
+rem The hard-coded path is one machine's install; when it misses, ask the
+rem Visual Studio installer where a toolset actually lives before giving up.
+rem %ProgramFiles(x86)% can be unset in a shell that cannot pass a name with
+rem parentheses through its environment (Git Bash drops it), so fall back to
+rem the location the installer has used since forever.
 set VCVARS=C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Auxiliary\Build\vcvars64.bat
+set PF86=%ProgramFiles(x86)%
+if not defined PF86 set PF86=C:\Program Files (x86)
+set VSWHERE=%PF86%\Microsoft Visual Studio\Installer\vswhere.exe
+if not exist "%VCVARS%" if exist "%VSWHERE%" (
+    for /f "usebackq tokens=*" %%I in (`"%VSWHERE%" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do (
+        set VCVARS=%%I\VC\Auxiliary\Build\vcvars64.bat
+    )
+)
 if not exist "%VCVARS%" (
-    echo [build] vcvars64.bat not found at "%VCVARS%"
+    echo [build] vcvars64.bat not found - is Visual Studio with the C++ toolset installed?
     exit /b 1
 )
 call "%VCVARS%" >nul
@@ -44,6 +57,15 @@ cl /nologo /O2 /MT /W3 /EHsc ^
 if errorlevel 1 ( echo [build] tesmiolauncher.exe FAILED & exit /b 1 )
 if exist build\tesmiolauncher.exe.manifest del build\tesmiolauncher.exe.manifest
 
+rem The signing tool. It only ever runs here, offline: the launcher embeds the
+rem public half of the key and verifies, this is the half that touches the
+rem private one. bcrypt.lib comes in through a pragma in tesmio_sign.h.
+echo [build] tsmsign.exe
+cl /nologo /O2 /MT /W3 /EHsc ^
+   /Fo"build\\" /Fd"build\\" /Fe"build\tsmsign.exe" ^
+   tools\signing\tsmsign.cpp /link kernel32.lib
+if errorlevel 1 ( echo [build] tsmsign.exe FAILED & exit /b 1 )
+
 rem Plugins. One folder per plugin under plugins\, each holding <name>.cpp and
 rem optionally <name>.ini; both land in build\plugins\, which is what the loader
 rem scans. Adding a plugin is adding a folder - nothing here lists them.
@@ -60,6 +82,21 @@ for /d %%P in (plugins\*) do (
     ) else (
         echo [build] plugins\%%~nxP: no %%~nxP.cpp, skipped
     )
+)
+
+rem Signing. A rebuilt DLL invalidates its old .dll.sig, so every plugin is
+rem re-signed on every build the private key is present for. Without the key
+rem there is nothing to do - the launcher then marks the plugins "not from
+rem Tesmio", which for a third-party build from source is simply the truth.
+rem The key file is the one thing a release must never ship.
+if exist tools\signing\tsm_private.bin (
+    for %%D in (build\plugins\*.dll) do (
+        build\tsmsign.exe sign tools\signing\tsm_private.bin "%%D" >nul
+        if errorlevel 1 ( echo [build] signing %%~nxD FAILED & exit /b 1 )
+    )
+    echo [build] plugins signed with the Tesmio key
+) else (
+    echo [build] no tools\signing\tsm_private.bin - plugins left unsigned
 )
 
 rem build\tesmioloader.ini is the live config: the launcher writes the plugin

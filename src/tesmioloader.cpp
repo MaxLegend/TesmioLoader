@@ -19,6 +19,10 @@
 #include <wchar.h>
 #include <intrin.h>
 
+// The save-manifest warning box is the only user32 call in the DLL; a pragma
+// here keeps build.bat's kernel32-only link line untouched.
+#pragma comment(lib, "user32.lib")
+
 // ---------------------------------------------------------------- exported names
 
 #define SYM_READ_FILE   "?C3DHelp_ReadFileIntoBuffer@@YAHPEBDPEAPEADPEAI_N@Z"
@@ -46,6 +50,7 @@ static int  g_traceReads  = 0;
 static int  g_logGame     = 1;
 static int  g_vfsEnabled  = 1;
 static int  g_probeMap    = 0;    // guard-page probe for the deposit map
+static int  g_saveManifest = 1;   // write/check tesmioloader.save.ini in saves
 static LONG g_mapSeen     = 0;    // raised the moment a deposit map is opened
 static DWORD WINAPI ProbeThread(LPVOID);
 static void  AddMapCopy(BYTE* start, SIZE_T len, int stride, const char* how);
@@ -382,6 +387,11 @@ LOG_FORWARD(h_LogError, o_LogError, "game.ERROR")
 
 // ---------------------------------------------------------------- hooked CRT opens
 
+// The save manifest lives with the plugin loader, far below; the open hooks
+// report every stats.ini they see, and it does the rest.
+static void NoteSaveOpen(const char* path, bool writing);
+static void NoteSaveOpenW(const wchar_t* path, bool writing);
+
 typedef FILE*   (__cdecl* t_fopen)(const char*, const char*);
 typedef errno_t (__cdecl* t_fopen_s)(FILE**, const char*, const char*);
 typedef FILE*   (__cdecl* t_wfopen)(const wchar_t*, const wchar_t*);
@@ -396,6 +406,9 @@ static FILE* __cdecl h_fopen(const char* path, const char* mode)
 {
     bool isMap = (path && strstr(path, "resourcemap") != NULL);
     if (isMap) InterlockedExchange(&g_mapSeen, 1);
+
+    if (mode && (mode[0] == 'w' || mode[0] == 'a')) NoteSaveOpen(path, true);
+    else if (mode && mode[0] == 'r') NoteSaveOpen(path, false);
 
     char over[MAX_PATH * 2];
     FILE* f;
@@ -450,6 +463,9 @@ static size_t __cdecl h_fread(void* buf, size_t sz, size_t cnt, FILE* f)
 
 static errno_t __cdecl h_fopen_s(FILE** f, const char* path, const char* mode)
 {
+    if (mode && (mode[0] == 'w' || mode[0] == 'a')) NoteSaveOpen(path, true);
+    else if (mode && mode[0] == 'r') NoteSaveOpen(path, false);
+
     char over[MAX_PATH * 2];
     if (mode && mode[0] == 'r' && VfsResolve(path, over, sizeof(over)))
     {
@@ -463,6 +479,9 @@ static errno_t __cdecl h_fopen_s(FILE** f, const char* path, const char* mode)
 
 static FILE* __cdecl h_wfopen(const wchar_t* path, const wchar_t* mode)
 {
+    if (mode && (mode[0] == L'w' || mode[0] == L'a')) NoteSaveOpenW(path, true);
+    else if (mode && mode[0] == L'r') NoteSaveOpenW(path, false);
+
     wchar_t over[MAX_PATH * 2];
     if (mode && mode[0] == L'r' && VfsResolveW(path, over, MAX_PATH * 2))
     {
@@ -474,6 +493,9 @@ static FILE* __cdecl h_wfopen(const wchar_t* path, const wchar_t* mode)
 
 static errno_t __cdecl h_wfopen_s(FILE** f, const wchar_t* path, const wchar_t* mode)
 {
+    if (mode && (mode[0] == L'w' || mode[0] == L'a')) NoteSaveOpenW(path, true);
+    else if (mode && mode[0] == L'r') NoteSaveOpenW(path, false);
+
     wchar_t over[MAX_PATH * 2];
     if (mode && mode[0] == L'r' && VfsResolveW(path, over, MAX_PATH * 2))
     {
@@ -492,6 +514,8 @@ static HANDLE WINAPI h_CreateFileA(LPCSTR path, DWORD access, DWORD share,
                                    LPSECURITY_ATTRIBUTES sa, DWORD disp,
                                    DWORD flags, HANDLE tmpl)
 {
+    NoteSaveOpen(path, (access & GENERIC_WRITE) != 0);
+
     char over[MAX_PATH * 2];
     if (!(access & GENERIC_WRITE) && VfsResolve(path, over, sizeof(over)))
     {
@@ -523,6 +547,8 @@ static HANDLE WINAPI h_CreateFileW(LPCWSTR path, DWORD access, DWORD share,
                                    LPSECURITY_ATTRIBUTES sa, DWORD disp,
                                    DWORD flags, HANDLE tmpl)
 {
+    NoteSaveOpenW(path, (access & GENERIC_WRITE) != 0);
+
     wchar_t over[MAX_PATH * 2];
     if (!(access & GENERIC_WRITE) && VfsResolveW(path, over, MAX_PATH * 2))
     {
@@ -537,6 +563,8 @@ static HANDLE WINAPI h_CreateFileW(LPCWSTR path, DWORD access, DWORD share,
 static HANDLE WINAPI h_CreateFile2(LPCWSTR path, DWORD access, DWORD share,
                                    DWORD disp, LPVOID ext)
 {
+    NoteSaveOpenW(path, (access & GENERIC_WRITE) != 0);
+
     wchar_t over[MAX_PATH * 2];
     if (!(access & GENERIC_WRITE) && VfsResolveW(path, over, MAX_PATH * 2))
     {
@@ -1294,6 +1322,22 @@ static bool PluginEnabled(const char* file)
     return GetPrivateProfileIntA("plugins", key, 1, g_iniPath) != 0;
 }
 
+// The loaded list, keyed the same way PluginEnabled is - the file name
+// without its extension. A DLL deleted from disk and one switched off in the
+// launcher look identical from here, which is exactly right for the save
+// manifest: either way the content is not in the game.
+static bool PluginLoaded(const char* key)
+{
+    for (int i = 0; i < g_pluginCount; i++)
+    {
+        char file[64];
+        strncpy_s(file, sizeof(file), g_plugin[i].file, _TRUNCATE);
+        if (char* dot = strrchr(file, '.')) *dot = 0;
+        if (_stricmp(file, key) == 0) return true;
+    }
+    return false;
+}
+
 static void LoadOnePlugin(const char* file)
 {
     if (g_pluginCount >= MAX_PLUGINS)
@@ -1440,6 +1484,338 @@ static void LoadPlugins()
     Logf("plugin   %d loaded", g_pluginCount);
 }
 
+// ---------------------------------------------------------------- save manifest
+//
+// A save made with modded content does not load without it: the resource
+// count is part of the save format, an unknown deposit type has no sampler,
+// and a missing Workshop building is an id nothing declares. The game dies
+// halfway through such a load without a word about why. The formats cannot be
+// made compatible, but the save can say what it expects - one small ini next
+// to stats.ini, written when the game saves and checked when it reads one
+// back:
+//
+//   ...\save\<name>\tesmioloader.save.ini
+//
+// The check lives here in the host rather than in any plugin for the one
+// reason that matters: it has to fire exactly when the plugin is OFF.
+
+#define SAVE_MANIFEST_NAME "tesmioloader.save.ini"
+
+// ...\save\<name>\stats.ini -> the <name> folder. Both separator styles; the
+// game opens saves through relative and absolute paths alike.
+static bool SaveDirOf(const char* path, char* out, size_t n)
+{
+    if (!path) return false;
+    size_t len = strlen(path);
+    if (len < 12 || len >= n) return false;
+    if (_stricmp(path + len - 9, "stats.ini") != 0) return false;
+    if (path[len - 10] != '\\' && path[len - 10] != '/') return false;
+
+    memcpy(out, path, len - 10);
+    out[len - 10] = 0;
+
+    // The folder above <name> must be "save".
+    char* name = out + (len - 10);
+    while (name > out && name[-1] != '\\' && name[-1] != '/') name--;
+    if (name - out < 6) return false;
+    char* above = name - 1;                              // separator before <name>
+    return _strnicmp(above - 4, "save", 4) == 0 &&
+           (above - 4 == out || above[-5] == '\\' || above[-5] == '/');
+}
+
+// <game> out of ...\save\<name>, three levels up (<name>, save, media_soviet).
+// The buildings check needs it because the game loads workshop_wip itself.
+static bool GameDirOf(const char* saveDir, char* out, size_t n)
+{
+    if (_snprintf_s(out, n, _TRUNCATE, "%s", saveDir) < 0) return false;
+    for (int up = 0; up < 3; up++)
+    {
+        char* s1 = strrchr(out, '\\');
+        char* s2 = strrchr(out, '/');
+        char* s  = s1 > s2 ? s1 : s2;
+        if (!s || s == out) return false;
+        *s = 0;
+    }
+    return true;
+}
+
+// True when `key` names a key of `section` in `ini`. A sentinel fallback
+// rather than an empty-string test, because an empty value is still a key.
+static bool IniHasKey(const char* ini, const char* section, const char* key)
+{
+    char buf[256];
+    GetPrivateProfileStringA(section, key, "\x1", buf, sizeof(buf), ini);
+    return buf[0] != '\x1';
+}
+
+// The `out` folder of plugins\buildings.ini, or the default the plugin uses.
+static void BuildingsOutDir(const char* ini, char* out, size_t n)
+{
+    GetPrivateProfileStringA("buildings", "out", "media_soviet\\workshop_wip",
+                             out, (DWORD)n, ini);
+    Trim(out);
+    if (!*out) _snprintf_s(out, n, _TRUNCATE, "media_soviet\\workshop_wip");
+}
+
+static bool WorkshopFolderExists(const char* gameDir, const char* outDir, const char* id)
+{
+    char folder[MAX_PATH * 2];
+    _snprintf_s(folder, sizeof(folder), _TRUNCATE, "%s\\%s\\%s", gameDir, outDir, id);
+    DWORD attr = GetFileAttributesA(folder);
+    return attr != INVALID_FILE_ATTRIBUTES && (attr & FILE_ATTRIBUTE_DIRECTORY) != 0;
+}
+
+static void WriteSaveManifest(const char* saveDir)
+{
+    char path[MAX_PATH * 2];
+    _snprintf_s(path, sizeof(path), _TRUNCATE, "%s\\%s", saveDir, SAVE_MANIFEST_NAME);
+
+    // A fresh file, so a name removed from a config does not linger from an
+    // earlier save written over the same slot.
+    DeleteFileA(path);
+    WritePrivateProfileStringA("tesmioloader", "version", "1", path);
+
+    // Which plugins were on. Informative only - the check below works off the
+    // content sections, not this one.
+    for (int i = 0; i < g_pluginCount; i++)
+    {
+        char key[64];
+        strncpy_s(key, sizeof(key), g_plugin[i].file, _TRUNCATE);
+        if (char* dot = strrchr(key, '.')) *dot = 0;
+        WritePrivateProfileStringA("plugins", key, "1", path);
+    }
+
+    // Mod resources. Only real when the plugin that injects them is on: a
+    // save written with it off contains none of them, and writing the names
+    // anyway would cry wolf on every later load.
+    if (PluginLoaded("resources"))
+    {
+        char ini[MAX_PATH];
+        api_IniPath("plugins\\resources.ini", ini, sizeof(ini));
+        char buf[8192];
+        DWORD r = GetPrivateProfileSectionA("list", buf, sizeof(buf), ini);
+        if (r && r < sizeof(buf) - 2)
+            for (char* p = buf; *p; p += strlen(p) + 1)
+            {
+                char* eq = strchr(p, '=');
+                if (eq) *eq = 0;
+                Trim(p);
+                if (*p) WritePrivateProfileStringA("resources", p, "1", path);
+            }
+    }
+
+    // Mod deposits, by section name - the deposit type number is what the
+    // save's maps and mines key on, and the name is its human spelling.
+    if (PluginLoaded("deposits"))
+    {
+        char ini[MAX_PATH];
+        api_IniPath("plugins\\deposits.ini", ini, sizeof(ini));
+        char names[4096];
+        DWORD r = GetPrivateProfileSectionNamesA(names, sizeof(names), ini);
+        if (r && r < sizeof(names) - 2)
+            for (char* p = names; *p; p += strlen(p) + 1)
+                if (_stricmp(p, "deposits") != 0)
+                    WritePrivateProfileStringA("deposits", p, "1", path);
+    }
+
+    // Declared buildings whose folder the game actually loads. The plugin's
+    // on/off state is deliberately not asked: the folders it wrote last time
+    // load either way, so the folder on disk is the only honest test.
+    {
+        char ini[MAX_PATH];
+        api_IniPath("plugins\\buildings.ini", ini, sizeof(ini));
+        char names[4096];
+        DWORD r = GetPrivateProfileSectionNamesA(names, sizeof(names), ini);
+        if (r && r < sizeof(names) - 2)
+        {
+            char gameDir[MAX_PATH];
+            bool haveGame = GameDirOf(saveDir, gameDir, sizeof(gameDir));
+            char outDir[256];
+            BuildingsOutDir(ini, outDir, sizeof(outDir));
+
+            for (char* p = names; *p; p += strlen(p) + 1)
+            {
+                if (_stricmp(p, "buildings") == 0) continue;
+                char id[32];
+                GetPrivateProfileStringA(p, "id", "", id, sizeof(id), ini);
+                Trim(id);
+                if (!*id) continue;
+                if (haveGame && !WorkshopFolderExists(gameDir, outDir, id)) continue;
+                WritePrivateProfileStringA("buildings", id, "1", path);
+            }
+        }
+    }
+
+    Logf("save   manifest written to %s", path);
+}
+
+// One check per save per session: the game reads stats.ini when a save is
+// browsed as well as when it is loaded, and the warning must not repeat.
+#define MAX_MANIFEST_CHECKED 16
+static char g_manifestChecked[MAX_MANIFEST_CHECKED][MAX_PATH * 2];
+static int  g_manifestCheckedCount;
+
+static bool ManifestChecked(const char* saveDir)
+{
+    EnterCriticalSection(&g_lock);
+    bool seen = false;
+    for (int i = 0; i < g_manifestCheckedCount; i++)
+        if (_stricmp(g_manifestChecked[i], saveDir) == 0) { seen = true; break; }
+    if (!seen && g_manifestCheckedCount < MAX_MANIFEST_CHECKED)
+        strncpy_s(g_manifestChecked[g_manifestCheckedCount++],
+                  sizeof(g_manifestChecked[0]), saveDir, _TRUNCATE);
+    LeaveCriticalSection(&g_lock);
+    return seen;
+}
+
+static void AppendMissing(char* missing, size_t n, const char* what,
+                          const char* name, const char* why)
+{
+    size_t used = strlen(missing);
+    if (used + 96 >= n) return;                  // out of room; the log has all of it
+    _snprintf_s(missing + used, n - used, _TRUNCATE, "- %s \"%s\": %s\r\n", what, name, why);
+}
+
+static void CheckSaveManifest(const char* saveDir)
+{
+    char path[MAX_PATH * 2];
+    _snprintf_s(path, sizeof(path), _TRUNCATE, "%s\\%s", saveDir, SAVE_MANIFEST_NAME);
+    if (GetFileAttributesA(path) == INVALID_FILE_ATTRIBUTES) return;   // pre-manifest save
+    if (ManifestChecked(saveDir)) return;
+
+    char missing[2048];
+    missing[0] = 0;
+
+    // resources: every name must still be declared, and the plugin on.
+    {
+        char buf[8192];
+        DWORD r = GetPrivateProfileSectionA("resources", buf, sizeof(buf), path);
+        if (r)
+        {
+            char ini[MAX_PATH];
+            api_IniPath("plugins\\resources.ini", ini, sizeof(ini));
+            bool on = PluginLoaded("resources");
+            for (char* p = buf; *p; p += strlen(p) + 1)
+            {
+                char* eq = strchr(p, '=');
+                if (eq) *eq = 0;
+                Trim(p);
+                if (!*p) continue;
+                if (!on)
+                    AppendMissing(missing, sizeof(missing), "resource", p,
+                                  "resources.dll is off");
+                else if (!IniHasKey(ini, "list", p))
+                    AppendMissing(missing, sizeof(missing), "resource", p,
+                                  "no longer in plugins\\resources.ini");
+            }
+        }
+    }
+
+    // deposits: the section must still exist, and the plugin on.
+    {
+        char buf[4096];
+        DWORD r = GetPrivateProfileSectionA("deposits", buf, sizeof(buf), path);
+        if (r)
+        {
+            char ini[MAX_PATH];
+            api_IniPath("plugins\\deposits.ini", ini, sizeof(ini));
+            bool on = PluginLoaded("deposits");
+            for (char* p = buf; *p; p += strlen(p) + 1)
+            {
+                char* eq = strchr(p, '=');
+                if (eq) *eq = 0;
+                Trim(p);
+                if (!*p) continue;
+                if (!on)
+                    AppendMissing(missing, sizeof(missing), "deposit", p,
+                                  "deposits.dll is off");
+                else if (!IniHasKey(ini, p, "token"))
+                    AppendMissing(missing, sizeof(missing), "deposit", p,
+                                  "no longer in plugins\\deposits.ini");
+            }
+        }
+    }
+
+    // buildings: the workshop folder must exist, wherever the ini points now.
+    {
+        char buf[4096];
+        DWORD r = GetPrivateProfileSectionA("buildings", buf, sizeof(buf), path);
+        if (r)
+        {
+            char ini[MAX_PATH];
+            api_IniPath("plugins\\buildings.ini", ini, sizeof(ini));
+            char gameDir[MAX_PATH];
+            bool haveGame = GameDirOf(saveDir, gameDir, sizeof(gameDir));
+            char outDir[256];
+            BuildingsOutDir(ini, outDir, sizeof(outDir));
+
+            for (char* p = buf; *p; p += strlen(p) + 1)
+            {
+                char* eq = strchr(p, '=');
+                if (eq) *eq = 0;
+                Trim(p);
+                if (!*p) continue;
+                // Symmetric with the write side: a game folder that cannot be
+                // worked out (a relative save path) means the folder cannot be
+                // verified either - and an unverifiable folder is not a missing
+                // one.
+                if (haveGame && !WorkshopFolderExists(gameDir, outDir, p))
+                    AppendMissing(missing, sizeof(missing), "building", p,
+                                  "no folder in the workshop_wip the ini names now");
+            }
+        }
+    }
+
+    if (!missing[0]) return;
+
+    Logf("save   %s expects content that is not enabled:", saveDir);
+    for (char* p = missing; *p; )
+    {
+        char* e = strstr(p, "\r\n");
+        if (e) *e = 0;
+        Logf("save     %s", p);
+        if (!e) break;
+        *e = '\r';
+        p = e + 2;
+    }
+
+    char text[2300];
+    _snprintf_s(text, sizeof(text), _TRUNCATE,
+        "This save was written with tesmioloader content that is not enabled now:\r\n\r\n"
+        "%s\r\nLoading it will most likely crash the game. Enable the missing items "
+        "in the launcher, or load a different save.", missing);
+    MessageBoxA(NULL, text, "tesmioloader - save needs mods",
+                MB_ICONWARNING | MB_OK | MB_TOPMOST | MB_SETFOREGROUND);
+}
+
+static void NoteSaveOpen(const char* path, bool writing)
+{
+    if (!g_saveManifest) return;
+
+    char dir[MAX_PATH * 2];
+    if (!SaveDirOf(path, dir, sizeof(dir))) return;
+
+    __try
+    {
+        if (writing) WriteSaveManifest(dir);
+        else         CheckSaveManifest(dir);
+    }
+    __except (FaultFilter("save manifest", GetExceptionInformation())) {}
+}
+
+static void NoteSaveOpenW(const wchar_t* path, bool writing)
+{
+    if (!g_saveManifest || !path) return;
+
+    // CP_ACP, not UTF-8: every file call the manifest makes goes through the
+    // ANSI profile APIs, which decode in the system codepage. UTF-8 bytes in a
+    // Cyrillic save name would reach CreateFileA as mojibake and the manifest
+    // would be written next to a folder that does not exist.
+    char ansi[MAX_PATH * 2];
+    if (!WideCharToMultiByte(CP_ACP, 0, path, -1, ansi, sizeof(ansi), NULL, NULL)) return;
+    NoteSaveOpen(ansi, writing);
+}
+
 // ---------------------------------------------------------------- main menu version line
 //
 // The line along the bottom of the main menu is one call at the very end of the
@@ -1542,6 +1918,9 @@ static void ReadConfig()
 
     g_probeMap   = GetPrivateProfileIntA("tesmioloader", "probe_map", g_probeMap, ini);
     g_probeTexel = GetPrivateProfileIntA("tesmioloader", "probe_texel", g_probeTexel, ini);
+
+    g_saveManifest = GetPrivateProfileIntA("tesmioloader", "save_manifest",
+                                           g_saveManifest, ini);
 
     g_plugins   = GetPrivateProfileIntA("tesmioloader", "plugins", g_plugins, ini);
     g_menuPatch = GetPrivateProfileIntA("tesmioloader", "menu_patch", g_menuPatch, ini);

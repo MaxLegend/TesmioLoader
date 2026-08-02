@@ -259,6 +259,11 @@ static int  g_needCount;
 static int   g_enabled    = 1;
 static int   g_doDemand   = 1;     // add the need to citizens
 static int   g_doStorage  = 1;     // add the resource to the shops that stock the donor
+// The type-descriptor pass has its own switch: it is the one pass that trusts
+// a heuristic find (FindStoragesIn), so a fault there must not keep
+// re-triggering on every later type load - which is exactly what happened
+// when the __except logged "disabled" but never disabled anything.
+static int   g_doTypes    = 1;     // extend the building types' own storages
 static int   g_maxDemands = PR_DEMAND_CAP;
 static int   g_replace    = 0;     // when the list is full: 0 skip, 1 take the donor's slot
 static int   g_probe      = 0;
@@ -386,6 +391,41 @@ static int SlotIndexOf(BYTE* storage, const void* rec)
     for (size_t i = 0; i < span / SLOT_SIZE; i++)
         if (((Slot*)(v->begin + i * SLOT_SIZE))->res == rec) return (int)i;
     return -1;
+}
+
+// A storage's first field is a vector of 16-byte slots, and a real one always
+// satisfies three things a lookalike cannot: the span is a whole number of
+// slots, it is readable, and it is short - no goods storage in the game
+// carries more than a handful. SlotCount checks the shape only; the
+// readability half is what kept a false positive's `begin` out of the
+// dereferences below.
+static bool SlotVectorValid(BYTE* storage)
+{
+    ResVector* v = (ResVector*)storage;
+    if (!v->begin || v->end < v->begin || v->cap < v->end) return false;
+
+    size_t span = (size_t)(v->end - v->begin);
+    if (span % SLOT_SIZE || span > 64 * SLOT_SIZE) return false;
+    return span == 0 || ReadablePtr(v->begin, span);
+}
+
+// The invariant the heuristic scan in FindStoragesIn cannot fake: every slot
+// of a real storage names a record inside the engine's resource vector. A
+// triple of pointers found by accident in the type descriptor points
+// anywhere else. Null slots are tolerated - they can never match the donor,
+// so nothing is pushed on their account.
+static bool SlotsPointAtResources(BYTE* storage, BYTE* resBegin, BYTE* resEnd)
+{
+    ResVector* v    = (ResVector*)storage;
+    size_t     slots = (size_t)(v->end - v->begin) / SLOT_SIZE;
+    for (size_t i = 0; i < slots; i++)
+    {
+        BYTE* res = (BYTE*)((Slot*)(v->begin + i * SLOT_SIZE))->res;
+        if (!res) continue;
+        if (res < resBegin || res >= resEnd) return false;
+        if ((size_t)(res - resBegin) % RES_STRIDE) return false;
+    }
+    return true;
 }
 
 // A demand storage is built by naming the four goods outright, a plain storage
@@ -547,6 +587,11 @@ static void ExtendStorage(BYTE* storage, int cls, bool live)
     if (cls < 0 || cls > 31) return;
     float capacity = *(float*)(storage + ST_CAPACITY);
     if (capacity <= 0.0f) return;
+
+    // The slot vector is dereferenced several times below. A storage that
+    // came from FindStoragesIn has already proven it, a live one is trusted -
+    // and one cheap check here means neither has to be.
+    if (!SlotVectorValid(storage)) return;
 
     // The token if the parser's copy still has one, otherwise whatever the
     // composition says. STOR_ANY from here means "cannot tell", and a category
@@ -753,9 +798,27 @@ static bool ShopAlreadyDone(void* b)
 // Every storage in the vector has to look like one, not just the first: the
 // descriptor is big and a triple of pointers of the right shape can occur by
 // accident. A wrong guess here writes into somebody else's structure.
+//
+// "Looks like one" was once three field checks, and it was not enough: a
+// candidate passed them with a slot vector whose `begin` did not even name
+// readable memory, and the first dereference faulted. The bar is now the one
+// thing a real storage has and an accident does not - a readable slot vector
+// whose every resource pointer lands inside the engine's resource vector.
 static ResVector* FindStoragesIn(BYTE* td)
 {
     if (!td || !ReadablePtr(td, TYPEDESC_SCAN)) return NULL;
+
+    // The invariant is only as good as the resource vector itself; when that
+    // cannot be read the weaker checks below still apply.
+    ResVector* rv = (ResVector*)(g_exeBase + P_RESOURCE_VECTOR);
+    BYTE* resBegin = NULL;
+    BYTE* resEnd   = NULL;
+    if (ReadablePtr(rv, sizeof(*rv)) && rv->begin && rv->end > rv->begin &&
+        !((size_t)(rv->end - rv->begin) % RES_STRIDE))
+    {
+        resBegin = rv->begin;
+        resEnd   = rv->end;
+    }
 
     for (size_t off = 0; off + 24 <= TYPEDESC_SCAN; off += 8)
     {
@@ -772,7 +835,8 @@ static ResVector* FindStoragesIn(BYTE* td)
             BYTE* s   = v->begin + i * STORAGE_STRIDE;
             int   cls = *(int*)(s + ST_CLASS);
             float cap = *(float*)(s + ST_CAPACITY);
-            if (cls < 0 || cls > 17 || !(cap > 0.0f) || SlotCount(s) < 0) ok = false;
+            if (cls < 0 || cls > 17 || !(cap > 0.0f) || !SlotVectorValid(s)) ok = false;
+            else if (resBegin && !SlotsPointAtResources(s, resBegin, resEnd)) ok = false;
         }
         if (ok) return v;
     }
@@ -897,13 +961,14 @@ static t_TypeLoad o_TypeLoad;
 static void h_TypeLoad(void* a, void* b, void* c)
 {
     o_TypeLoad(a, b, c);
-    if (!g_enabled || !g_doStorage) return;
+    if (!g_enabled || !g_doStorage || !g_doTypes) return;
 
     __try { ExtendAllTypes(); }
     __except (FaultFilter("needs type storages", GetExceptionInformation()))
     {
         Logf("needs    type storages disabled after a fault - the preview stays empty "
              "until a building of that type exists");
+        g_doTypes = 0;
     }
 }
 

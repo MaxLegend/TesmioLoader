@@ -442,6 +442,16 @@ Defaults `tex` to `[gameobj+0xF00]` when null. Converts world position through
 2×2 block through the texture vtable and bilinearly interpolates. Returns
 `out`. Out-of-range positions return a zero colour.
 
+The texel read (`TextureAccesGetTexel`, `C3DDLL64.dll` rva `0x19080`) is
+`[(tex+0x158) + (x + (tex+0x160 >> 2)·y)·4]` with **no null check** — the
+caller is expected to have the texture bracketed. `0x1DD190` does so per type:
+`0x1DD458` opens `resourcemap` for types 0–2, `0x1DD474` opens `resourcemap2`
+for 6–7, `0x1DD499` opens the terrain mask for 3; the closes are `0x1DDE08`,
+`0x1DDE25`, `0x1DDE45` in reverse order. A type outside those ranges samples
+through a never-mapped texture, and `tex+0x158` is zero until the first open —
+the crash a mod deposit type produced before the plugin taught the bracket its
+types. See [05-deposits.md](05-deposits.md), *The scan's bracket*.
+
 ### Related functions
 
 | RVA | What |
@@ -1049,12 +1059,21 @@ call [rax+0x178]   ; ID3D11DeviceContext::CopyResource   GPU texture -> staging
 call [r10+0x70]    ; ID3D11DeviceContext::Map
 ```
 
-and `TextureAccessClose` (`0x18FC0`) is `Unmap` plus the `CopyResource` back.
-So an open/close pair moves the whole 4 MB map across the bus twice and uses the
-**immediate context**, which is not thread-safe. Nothing may bracket a texel
-read or write from anywhere but the render thread, and it should be done once
-for as much work as possible. The staging texture is created once and cached at
-`tex+0x168`, guarded by the byte at `tex+0x170`.
+and `TextureAccessClose` (`0x18FC0`) is `Unmap` plus the `CopyResource` back —
+and, with the byte at `tex+0x170` clear, a `Release` of the staging texture and
+`tex+0x168 = 0`. So an open/close pair moves the whole 4 MB map across the bus
+twice and uses the **immediate context**, which is not thread-safe. Nothing may
+bracket a texel read or write from anywhere but the render thread, and it
+should be done once for as much work as possible.
+
+**`TextureAccessClose` never clears `tex+0x158`, the mapped-texel pointer.**
+After a close it still holds the last `Map` result — a dangling pointer into
+staging memory that was just unmapped and, usually, released. Code that reads
+through it keeps "working" on stale (in fact last-copied-back, so often
+*correct*) data. This is exactly how an unbracketed scan of a mod deposit
+disguised itself as working on any map the editor had painted at least once —
+see [07-pitfalls.md](07-pitfalls.md). The staging texture is created lazily at
+`tex+0x168` and kept between calls only when `tex+0x170` is set.
 
 This cost a driver crash — see [07-pitfalls.md](07-pitfalls.md).
 

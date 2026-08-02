@@ -283,6 +283,16 @@ mod resource is already in the vector by the time its slot is appended.
 Both prologues are compared against the site before anything is written, so a
 game update makes the hook refuse rather than corrupt the process.
 
+The type's storage vector itself is found by scanning the descriptor (at
+`building+0x318`, stride `0xBE8`) for a `{begin, end, cap}` triple whose span
+divides by the storage stride `0xE0`. That shape alone is not proof — the
+descriptor is long enough that three pointers can satisfy it by accident — so a
+candidate is accepted only when every storage in it also passes the one test a
+lookalike cannot fake: a readable slot vector, a whole number of 16-byte slots,
+and every slot's resource pointer landing inside the engine's resource vector
+on its own 832-byte stride. A fault anywhere in the pass disables it for the
+session (`g_doTypes`, logged) rather than re-firing on every later type load.
+
 ### One key drives both halves
 
 ```ini
