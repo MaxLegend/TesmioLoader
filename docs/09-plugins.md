@@ -296,6 +296,12 @@ project targets, so neither side gains a dependency. The shared format and the
 primitives are `src/tesmio_sign.h`; the launcher is the only consumer of
 `tesmio_pubkey.h`.
 
+**The whole block is optional.** The launcher includes both headers through
+`__has_include`, and `build.bat` skips `tsmsign.exe` and the signing pass when
+their sources are missing — so a source drop without the signing machinery
+still builds end to end. Such a launcher never mentions signatures at all: it
+cannot recognise one, so it accuses nobody of being "not from Tesmio".
+
 ## What goes wrong, and what the log says
 
 | Line | Meaning |

@@ -2,6 +2,12 @@
 
 ---
 
+*Update! - v. b0.3.4*
+A signature of my authorship has been added - modified plugins or plugins without a signature will be marked as not signed. This does not affect anything - any other plugins will load. It's just my digital signature that the plugin was built by me and not modified in any way.
+Fixed bugs and crashes: issues #8, issues #9, issues #10
+
+---
+
 *Update! - v. b0.3.3*
 A cross-reference bug that was used during development and accidentally made it into the release has been fixed. This was the reason why many users often failed to search for icons and resources, even though they were physically located where they should have been.
 

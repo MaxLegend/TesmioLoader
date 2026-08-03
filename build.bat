@@ -60,11 +60,18 @@ if exist build\tesmiolauncher.exe.manifest del build\tesmiolauncher.exe.manifest
 rem The signing tool. It only ever runs here, offline: the launcher embeds the
 rem public half of the key and verifies, this is the half that touches the
 rem private one. bcrypt.lib comes in through a pragma in tesmio_sign.h.
-echo [build] tsmsign.exe
-cl /nologo /O2 /MT /W3 /EHsc ^
-   /Fo"build\\" /Fd"build\\" /Fe"build\tsmsign.exe" ^
-   tools\signing\tsmsign.cpp /link kernel32.lib
-if errorlevel 1 ( echo [build] tsmsign.exe FAILED & exit /b 1 )
+rem The whole block is optional - a source drop without the signing machinery
+rem must still build, so a missing tsmsign.cpp skips the tool rather than
+rem failing the build.
+if exist tools\signing\tsmsign.cpp if exist src\tesmio_sign.h (
+    echo [build] tsmsign.exe
+    cl /nologo /O2 /MT /W3 /EHsc ^
+       /Fo"build\\" /Fd"build\\" /Fe"build\tsmsign.exe" ^
+       tools\signing\tsmsign.cpp /link kernel32.lib
+    if errorlevel 1 ( echo [build] tsmsign.exe FAILED & exit /b 1 )
+) else (
+    echo [build] no tsmsign.cpp or no src\tesmio_sign.h - tsmsign.exe skipped
+)
 
 rem Plugins. One folder per plugin under plugins\, each holding <name>.cpp and
 rem optionally <name>.ini; both land in build\plugins\, which is what the loader
@@ -89,14 +96,15 @@ rem re-signed on every build the private key is present for. Without the key
 rem there is nothing to do - the launcher then marks the plugins "not from
 rem Tesmio", which for a third-party build from source is simply the truth.
 rem The key file is the one thing a release must never ship.
-if exist tools\signing\tsm_private.bin (
+rem Requires both the tool and the key; a build without either stays unsigned.
+if exist build\tsmsign.exe if exist tools\signing\tsm_private.bin (
     for %%D in (build\plugins\*.dll) do (
         build\tsmsign.exe sign tools\signing\tsm_private.bin "%%D" >nul
         if errorlevel 1 ( echo [build] signing %%~nxD FAILED & exit /b 1 )
     )
     echo [build] plugins signed with the Tesmio key
 ) else (
-    echo [build] no tools\signing\tsm_private.bin - plugins left unsigned
+    echo [build] plugins left unsigned - no signing tool or no private key
 )
 
 rem build\tesmioloader.ini is the live config: the launcher writes the plugin
