@@ -130,20 +130,104 @@ that library's `steamapps\common` if the manifest is there but the folder moved.
 starting anything. It is the only way to see the losing strategies, since the
 winner is the only one that leaves a trace once the game is up.
 
+### The version gate
+
+Every address in this project belongs to **v1.1.1.7**, PE `TimeDateStamp`
+`0x69C4098C`. A patch site verifies its own bytes and refuses on a mismatch, so
+a game update makes each hook decline rather than corrupt the process — but that
+is a dozen separate refusals in a log file nobody reads, after the game is
+already running. The launcher asks once, before the process exists, and refuses
+to inject at all.
+
+**`SOVIET64.exe` has no `VERSIONINFO` resource** — `FileVersion` is `0.0.0.0` —
+so there is nothing to ask the shell. The version is read out of the only place
+the game keeps it: the arguments it formats its own main-menu line from. The
+exe is parsed as **data**, never loaded as a module; the launcher is about to
+inject into that file and must not map it first.
+
+| Step | What |
+|---|---|
+| 1 | find `"v%d.%d.%d.%d (64 bit DX11.1)"` in `.rdata` → rva `0x8961E0` |
+| 2 | scan `.text` for the one rip-relative `lea` that resolves to it → `0x28C788` |
+| 3 | read the four immediates out of the 64 bytes in front of it |
+
+In this build those bytes are `mov [rsp+0x20], 7` / `mov edx, 1` /
+`mov r9d, edx` / `mov r8d, edx` — so 1.1.1 comes from a single immediate and the
+build number from the fifth argument's stack slot. The scan is not a
+disassembler: it looks for the exact encodings that can put a small constant in
+each of those four argument slots and takes the last write to each. **Anything
+it does not recognise leaves the numbers unread rather than wrong**, and the
+`TimeDateStamp` then decides alone.
+
+| Numbers | Stamp | Verdict |
+|---|---|---|
+| 1.1.1.7 | matches | supported |
+| 1.1.1.7 | differs | supported, *"a different build of it"* — a hotfix that left the printed version alone. Allowed, and said out loud |
+| anything else | — | **refused** |
+| unreadable | matches | supported — the stamp is the stronger fact and this exe is byte-identical to the one it names |
+| unreadable | differs | **refused** |
+
+Both facts are shown in the window and printed by `--find`, which exits `2` when
+the game it found would not be launched. `version_check = 0` in
+`tesmioloader.ini`, or `--ignore-version`, turns the refusal into a warning —
+that switch is for whoever is porting the addresses to a new build, and it is
+deliberately not a checkbox.
+
+The supported version is **compiled in**, not configurable. It is not a
+preference: it is a statement about which addresses this binary was built with,
+and a config key for it would only produce a launcher that injects confidently
+into a game it cannot patch.
+
 ### The window
 
 `tesmiolauncher.exe` is `/SUBSYSTEM:WINDOWS` and shows a small dialog: the
-resolved game path with a Browse button, a checkbox per plugin, and Launch.
-`--nogui` skips it and behaves exactly as the program did before.
+resolved game path with a Browse button, two lines about the game version, a
+checkbox per plugin, and Launch. `--nogui` skips it and behaves exactly as the
+program did before — the version gate included.
 
-Plain Win32, controls created by hand — `build.bat` compiles one `.cpp` per
-binary and an `.rc` would put a second tool in that chain. Themed controls come
-from a `MANIFESTDEPENDENCY` on Common-Controls v6 declared in the source and
-embedded with `/MANIFEST:EMBED`; the metrics are written at 96 dpi and scaled
-through one `S()`, with `SetProcessDpiAwarenessContext` called on the **first
-line of `wWinMain`** — the first dpi-sensitive call in a process fixes its
-awareness for good, and doing it later silently leaves the window
-bitmap-stretched.
+Plain Win32, controls created by hand. Themed controls come from a
+`MANIFESTDEPENDENCY` on Common-Controls v6 declared in the source and embedded
+with `/MANIFEST:EMBED`; the metrics are written at 96 dpi and scaled through one
+`S()`, with `SetProcessDpiAwarenessContext` called on the **first line of
+`wWinMain`** — the first dpi-sensitive call in a process fixes its awareness for
+good, and doing it later silently leaves the window bitmap-stretched.
+
+The title-bar icon is `logo.ico` — the same resource `src/tesmiolauncher.rc`
+gives the exe, loaded again by hand at both `SM_CXICON` and `SM_CXSMICON`. **A
+window's icon comes from its class, not from the executable**: without this the
+exe has the logo in Explorer and on the taskbar and shows the default in its own
+title bar. A build made without `rc.exe` has no icon resource and falls back to
+the game's own icon, which is what this used to show.
+
+#### The plugin list
+
+Two columns in a child window of their own, scrolled with `WS_VSCROLL`. The
+loader takes up to 32 plugins, and a column of 32 rows is taller than the work
+area of a laptop screen — the old layout grew the window to fit the count, which
+put Launch off the bottom edge for anyone who had that many. Row-major, so the
+two halves of a scrolled list never slide past each other; `LIST_MAXROW` rows on
+screen, and fewer when the work area will not take that many.
+
+Scrolling is `ScrollWindowEx` with `SW_SCROLLCHILDREN`, so the OS moves the
+checkboxes and nothing is repositioned by hand. A child window costs three
+things and all three are paid: its children's `WM_COMMAND` and
+`WM_CTLCOLORSTATIC` arrive at it rather than at the dialog and are forwarded,
+tab traversal only descends into it because it is `WS_EX_CONTROLPARENT`, and the
+wheel goes to whatever has the focus so the dialog forwards `WM_MOUSEWHEEL`
+down. The checkboxes carry `BS_NOTIFY` for one reason: without it a button never
+sends `BN_SETFOCUS`, and tabbing would park the focus on a row scrolled out of
+sight.
+
+**The group box is the only control here with `WS_CLIPSIBLINGS`, and it needs
+it.** A group box paints its whole rectangle, everything in the group sits
+inside that rectangle, and without the style it wipes the list on every repaint —
+the checkboxes are then still there, still enumerable and still clickable, and
+invisible, because they are grandchildren and painting over their parent never
+asks them to draw. The style must go on the container and nowhere else: it
+excludes every overlapping sibling from that window's own painting, so putting
+it on the controls as well makes each of them clip the group box out of itself,
+and the group box's rectangle covers all of them. Both mistakes were made in
+that order; the second looks like the first.
 
 A console is not opened. When output has somewhere to go it uses it: an inherited
 `stdout` handle first, for a caller that redirected to a pipe or a file, and the
@@ -306,6 +390,7 @@ everything a feature needs lives in that plugin's own ini.
 | `plugins` | scan `plugins\` and load what is there |
 | `menu_patch` | append `menu_tag` to the main menu's version line |
 | `version` | this build's version, shown in the launcher's title bar |
+| `version_check` | **launcher only.** 0 injects into a game that is not v1.1.1.7. Absent means 1 |
 
 `menu_tag` also lives in this section, but it is not a setting: tesmiolauncher's
 SaveConfig derives it from `version` (`"tesmioloader v. " + version`) and

@@ -109,6 +109,20 @@ files and writes the results into the record's five mesh slots. The files below
 are therefore genuinely used, and a missing one leaves that slot showing the
 template's mesh.
 
+**`LoadFromFile` returns an error code, not a bool — every real mesh was being
+discarded.** A whole session reported every resource with files on disk as
+`0 of N replaced`, drawn as the template, even though the `.nmf`s were
+byte-identical to their donors' own working meshes and the VFS log showed
+every read succeeding. The cause was the check itself:
+`?LoadFromFile@C3D_MESH@@QEAA H PEBD PEAVC3D_MIDDLEPOINT@@ _N @Z` returns `H`
+(`int`), not `_N` (`bool`) — confirmed by disassembling `C3DDLL64.dll` at
+rva `0xA84C0`, where the full-parse success path ends in `xor eax,eax` (0) and
+the one failure path found (`fopen` itself returning null) returns 1. Zero
+means no error, the opposite of what `if (!loaded)` assumed. Fixed to
+`if (rc != 0)`. **Confirmed the mechanism, not yet the mesh on screen** — the
+next thing to check is a resource with real files showing its own geometry in
+game rather than the template's.
+
 **Which files depends on the transport class**, and the split is visible in the
 stock folder. Bulk resources — `rawiron`, `coal`, `gravel`, `bauxite`,
 `uranium`, `asphalt` — ship four pile stages plus a vehicle load:
@@ -319,6 +333,68 @@ because by then the building-type parser has taken pointers into it. That cannot
 happen in the normal order and the guard exists to keep it that way — if the log
 ever shows `not moving the array now`, the ordering has changed and the reason
 is worth finding before raising anything.
+
+## Customhouses
+
+A customhouse's trade storages are plain `$STORAGE` lines, one per transport
+class - confirmed against `media_soviet/buildings_types/zoll_sahy.ini`, whose
+`$STORAGE` lines name no resource at all, unlike a shop's `$STORAGE_DEMAND_*`
+or a pharmacy's `$STORAGE_SPECIAL`. That slot list is built exactly once,
+while `building.ini` is parsed, by walking whatever the resource vector looks
+like at that moment - the same `0xE40F0` [11-needs.md](11-needs.md) already
+documents in full for a shop's storage. **A customhouse already standing on a
+map, or built in an earlier session, freezes its trade list at whatever
+resources existed then.** Every name `[list]` declares afterwards is
+otherwise perfectly tradeable - matching transport class, a computed price,
+trucks that will happily deliver it - but the customhouse's own slot list has
+no entry for it, so nothing there ever sells it. Confirmed empirically before
+the fix went in: demolishing and rebuilding an affected customhouse fixes it
+immediately, no code required.
+
+`[customs]` in this plugin's own `.ini` reruns the same walk against the
+*live* vector, once per customhouse, the first time each one ticks after the
+plugin loads:
+
+```
+rva 0x185470  FUN_140185470(game, building) - the type's own tick
+```
+
+Confirmed by disassembly rather than taken on faith: the building-type
+dispatcher (`rva 0x139A80`) calls it only from
+`cmp dword ptr [rax+0x360],0x14 / jne .. / call 0x185470` at `rva 0x13E30A` -
+`0x14` is `BUILDINGTYPE_CUSTOMHOUSE`, and `rax` there is `building+0x318`, the
+same type-descriptor pointer `TYPEDESC_OFF` names in `needs.cpp`. The function
+also spawns tourists on its own timer and tail-jumps into a second, shared
+function afterwards; neither matters to the hook, which only needs the call
+to happen once per customhouse per tick - the dispatcher already guarantees
+that.
+
+New slots clone an existing slot's shape rather than computing one, the same
+"clone, don't compute" rule `needs.cpp` uses for a shop's slot and for the
+same reason: the `limit` field's real meaning still isn't understood, and
+guessing at it has broken things before. Content starts at zero - a
+customhouse should not wake up owning stock of something it never imported.
+
+**Watched in game, and it cost money the first time.** A newly added slot
+used to clone its `content`/`limit` and the second, parallel array from
+whatever slot happened to sit first in the storage - reasonable for a shop,
+where that pair is a stocking target unrelated to which resource it is, but
+wrong for a customhouse. The script API (`media_soviet/scripts/
+SOVIETInstructions.txt`, `struct Storage`) exposes `bImport`/`bExport` on the
+storage itself, which means the per-slot fields this plugin writes are the
+*trade amount* for that one resource at whatever direction the storage is
+already set to - so a brand-new resource inherited an unrelated, already-
+configured resource's amount and the customhouse started moving it before a
+single truck had arrived, spending money on an import nobody asked for. Fixed
+by starting every new slot at zero - content, limit, and the parallel array -
+which is what an unconfigured resource in a real customhouse already looks
+like: present in the list, tradeable, and inert until the player sets a real
+amount from the trade panel.
+
+`probe = 1` in `[customs]` logs one line per slot added. Still to confirm:
+that a freshly added resource shows in the trade panel with nothing bought or
+sold until configured, and that setting a real buy or sell amount on it there
+behaves like it would for any vanilla resource.
 
 ## Other limits
 

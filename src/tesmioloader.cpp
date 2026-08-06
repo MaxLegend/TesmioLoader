@@ -1372,19 +1372,29 @@ static void LoadOnePlugin(const char* file)
     }
 
     // Asked before Init, and Init is not called on a mismatch: a plugin built
-    // against a different header would be reading moved fields out of the host
-    // table, which corrupts the process rather than misbehaving.
+    // against an incompatible header would be reading moved fields out of the
+    // host table, which corrupts the process rather than misbehaving.
+    //
+    // A RANGE, not an equality. TSM_API_VERSION_MIN is the oldest plugin this
+    // host still honours, and a change to tesmio_api.h that did not have to
+    // break an old plugin is not allowed to - see the rule spelled out there.
+    // So a plugin built against an older but still-compatible header loads
+    // exactly as it always did. Newer than this host is still refused, because
+    // it may read a field off the end of the table it is handed.
     unsigned got = 0;
     __try { got = ver(); }
     __except (FaultFilter("plugin api version", GetExceptionInformation())) { got = 0; }
 
-    if (got != TSM_API_VERSION)
+    if (got < TSM_API_VERSION_MIN || got > TSM_API_VERSION)
     {
-        Logf("plugin   \"%s\" wants API %u, this loader is %u - not initialised",
-             file, got, TSM_API_VERSION);
+        Logf("plugin   \"%s\" reports API %u, this loader takes %u..%u - not initialised",
+             file, got, TSM_API_VERSION_MIN, TSM_API_VERSION);
         FreeLibrary(mod);
         return;
     }
+    if (got != TSM_API_VERSION)
+        Logf("plugin   \"%s\" built against API %u, running on %u",
+             file, got, TSM_API_VERSION);
 
     // Reserved before Init runs, so anything the plugin publishes is credited
     // to it in the log.

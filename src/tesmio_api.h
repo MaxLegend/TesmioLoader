@@ -46,10 +46,52 @@
 
 #include <stddef.h>
 
-// Bumped whenever anything below changes shape. The host refuses a plugin that
-// reports a different number, because a stale plugin reading a moved field
-// would corrupt the process rather than misbehave.
+// Bumped whenever anything below changes at all - a new field, a new service, a
+// new constant. It is what a plugin reports back through TsmPluginApiVersion,
+// and it is how the host knows what that plugin was built to expect.
 #define TSM_API_VERSION 3u
+
+// The oldest plugin this host still initialises, and the whole of the
+// compatibility promise: the host accepts anything in
+//
+//     TSM_API_VERSION_MIN <= reported <= TSM_API_VERSION
+//
+// **KEEPING AN OLD PLUGIN WORKING IS A REQUIREMENT, NOT A COURTESY.** A change
+// to this header that does not have to break one must not break one, and
+// raising this number is the admission that it did. A plugin is a DLL somebody
+// downloaded; the source it was built from may not exist any more, and a host
+// that refuses everything on every release turns each version bump into a
+// re-release of the whole ecosystem.
+//
+// A change is COMPATIBLE - bump TSM_API_VERSION, leave this alone - when a
+// plugin built against any accepted older version still reads exactly the bytes
+// it was compiled to read:
+//
+//   * a new field APPENDED to the very end of TsmHost. structSize is what an
+//     older host is detected by, and an old plugin never looks that far
+//   * a new #define, a new service name, a new TsmDepositApi-style interface
+//   * a new optional export the host calls only when GetProcAddress finds it
+//   * a new value of an existing enum-like field that older plugins can only
+//     fail to recognise, never misread
+//
+// A change is BREAKING - raise this to the new TSM_API_VERSION - when it makes
+// an old plugin read the wrong bytes or act on the wrong promise:
+//
+//   * moving, removing, reordering or retyping ANY field of TsmHost or of any
+//     struct that crosses the boundary. Inserting a field in the middle is the
+//     classic one, and it is silent: every field after it shifts
+//   * changing what an existing function does, what it returns, when it may be
+//     called, or which phase it belongs to
+//   * changing the meaning of a value a plugin already passes or reads
+//
+// The range is deliberately one-sided. A plugin reporting MORE than
+// TSM_API_VERSION is always refused: it was built against a header this host
+// does not have, so it may read a field off the end of the table it was handed.
+//
+// A plugin that wants a field added after its own version must check
+// TsmHost::structSize before touching it - that is what the field is for, and
+// it is the only way an old plugin can use a new host's extras.
+#define TSM_API_VERSION_MIN 3u
 
 #ifdef __cplusplus
 extern "C" {

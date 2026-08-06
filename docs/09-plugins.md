@@ -192,19 +192,72 @@ if (const char* s = D->setting(i, "deplete")) tonnes = (float)atof(s);
 
 ## Versioning
 
-`TSM_API_VERSION` is bumped whenever anything in `tesmio_api.h` changes shape.
-It is at **2**; version 1 had no `Start` phase and carried the deposit registry
-in the host table.
+Two numbers, and the second one is a promise.
 
-The loader calls `TsmPluginApiVersion` **before** `TsmPluginInit` and does not
-call `Init` at all on a mismatch. That ordering is the point: a plugin built
-against an older header would be reading moved fields out of the host table,
+| Constant | What | Now |
+|---|---|---|
+| `TSM_API_VERSION` | this header, bumped on **every** change to it | 3 |
+| `TSM_API_VERSION_MIN` | the oldest plugin this loader still initialises | 3 |
+
+The loader accepts `TSM_API_VERSION_MIN <= reported <= TSM_API_VERSION`. Version
+1 had no `Start` phase and carried the deposit registry in the host table; 2
+added the split; 3 grew the deposit service.
+
+`TsmPluginApiVersion` is called **before** `TsmPluginInit` and `Init` is not
+called at all on a refusal. That ordering is the point: a plugin built against
+an incompatible header would be reading moved fields out of the host table,
 which corrupts the process rather than misbehaving. `TsmPluginApiVersion` must
 therefore do nothing but return the constant.
 
-`TsmHost::structSize` is there so a plugin can tell whether a field it wants
-exists in an older host, if the version ever grows compatibly. Nothing uses it
-yet.
+### Keeping old plugins working is a requirement
+
+**A change to `tesmio_api.h` that does not have to break an old plugin must not
+break one.** Raising `TSM_API_VERSION_MIN` is the admission that it did, and it
+is the only thing that stops an already-built DLL from loading.
+
+This is not politeness. A plugin is a file somebody downloaded; the source it
+was built from may not exist any more, and a host that refuses everything on
+every release turns each version bump into a re-release of the whole ecosystem —
+by whoever still can, for the ones nobody maintains.
+
+**Compatible** — bump `TSM_API_VERSION`, leave `TSM_API_VERSION_MIN` alone. An
+old plugin still reads exactly the bytes it was compiled to read:
+
+* a field **appended to the very end** of `TsmHost`
+* a new `#define`, a new service name, a new service interface struct
+* a new optional export the host calls only when `GetProcAddress` finds it
+* a new value of an existing field that an old plugin can only fail to
+  recognise, never misread
+
+**Breaking** — raise `TSM_API_VERSION_MIN` to the new `TSM_API_VERSION`:
+
+* moving, removing, reordering or retyping **any** field of `TsmHost` or of any
+  struct that crosses the boundary. Inserting a field in the middle is the
+  classic one, and it is silent: every field after it shifts
+* changing what an existing function does, what it returns, when it may be
+  called, or which phase it belongs to
+* changing the meaning of a value a plugin already passes or reads
+
+The range is deliberately one-sided. A plugin reporting **more** than
+`TSM_API_VERSION` is always refused: it was built against a header this loader
+does not have, so it may read a field off the end of the table it was handed.
+
+`TsmHost::structSize` is the other half. A plugin that wants a field added after
+its own version must check it before touching that field — that is what the
+field is for, and it is the only way an old plugin can use a new host's extras.
+
+The log says which case it hit:
+
+```
+plugin   "x.dll" reports API 1, this loader takes 3..3 - not initialised
+plugin   "x.dll" built against API 3, running on 4
+```
+
+The second is not a warning. It is the compatibility promise working, printed
+once so a bug report says which header the plugin came from.
+
+The launcher checks the same range before the game is even started, and marks a
+plugin outside it in red — see below.
 
 ## Load order
 
@@ -260,14 +313,23 @@ The launcher says whose plugin each DLL is. A signed plugin ships
 `<name>.dll.sig` beside its DLL — a `TSMSIG1` header and an ECDSA P-256
 signature over the SHA-256 of the file exactly as it sits on disk — and the
 launcher verifies it against the public key compiled into it from
-`src/tesmio_pubkey.h`. Three states, all three shown in the window and in
-`--find`:
+`src/tesmio_pubkey.h`. Three states:
 
-| Label | Meaning |
-|---|---|
-| `signed by Tesmio` | the signature verifies — these bytes are exactly what the key holder built |
-| `not from Tesmio` | no `.sig` file — a third-party build, or a build made without the key |
-| `SIGNATURE INVALID - not from Tesmio` | a `.sig` exists and does not match the bytes; painted red |
+| In the window | In `--find` | Meaning |
+|---|---|---|
+| `[tesmio]` | `signed by Tesmio` | the signature verifies — these bytes are exactly what the key holder built |
+| *nothing* | *nothing* | no `.sig` file — a third-party build, or a build made without the key |
+| `[SIGNATURE INVALID]` | `SIGNATURE INVALID` | a `.sig` exists and does not match the bytes; painted red |
+
+**An unsigned plugin carries no mark at all.** It used to say "not from
+Tesmio", which reads as an accusation against every third-party plugin and
+against every build made from source without the private key — which is most of
+them. Absence of a mark is the honest form of "nobody claims to have built
+this", and it leaves `[tesmio]` meaning exactly what it says.
+
+The middle case is the only one that goes quiet, and the last one deliberately
+does not: a `.sig` that no longer matches its file is not an unsigned plugin.
+Somebody signed those bytes and the bytes then changed.
 
 The point is provenance, not sandboxing — a plugin runs in the game's address
 space and can do anything the loader can, signature or not, so **the mark does
@@ -309,7 +371,8 @@ cannot recognise one, so it accuses nobody of being "not from Tesmio".
 | `plugin   x.dll          off in tesmioloader.ini [plugins]` | its `[plugins]` key is 0. Never loaded, never initialised |
 | `plugin   "x.dll" failed to load (126)` | a missing dependency, usually a non-`/MT` build |
 | `plugin   "x.dll" is not a tesmioloader plugin` | one of the required exports is missing. Check `extern "C"` and `__declspec(dllexport)` |
-| `plugin   "x.dll" wants API 1, this loader is 2` | rebuild it against the current header |
+| `plugin   "x.dll" reports API 1, this loader takes 3..3` | outside the accepted range. Rebuild it against the current header |
+| `plugin   "x.dll" built against API 3, running on 4` | not a problem — an older but still compatible plugin, loaded as normal |
 | `plugin   "x.dll" declined to install (1)` | `TsmPluginInit` returned non-zero, usually its own `enabled = 0` |
 | `plugin   x started with 1 - inactive` | `TsmPluginStart` returned non-zero. It stays loaded, because by then it may already have hooked something |
 | `plugin   service "s" v1 from x.dll` | a provider published |

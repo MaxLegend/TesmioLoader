@@ -26,12 +26,33 @@
 // deleted, which is what makes the choice reversible from either side. --nogui
 // skips the window entirely and behaves exactly as this program did before.
 //
+// The checkboxes sit in a scrolling two-column list rather than one column the
+// window grows to fit: the loader takes up to 32 plugins and a column of 32 is
+// taller than a laptop screen, at which point Launch is off the bottom edge and
+// unreachable. The list is its own child window with WS_VSCROLL - see
+// "the plugin list" below.
+//
 // Every checkbox also says whose signature the DLL carries. A plugin signed by
 // tools\signing\tsmsign.exe verifies against the public key embedded in this
 // binary and is labelled "signed by Tesmio"; anything without a valid
 // <name>.dll.sig is labelled "not from Tesmio", and a signature that no longer
 // matches the bytes is red. A mark is all it is - foreign plugins still load,
 // because blocking them is the loader's business, not the window's.
+//
+// THE VERSION GATE. Every address the loader and its plugins patch belongs to
+// one build of the game, and the whole project is written against v1.1.1.7.
+// A patch site verifies its own bytes before it writes, so a game update makes
+// each hook refuse rather than corrupt the process - but that is a dozen
+// separate refusals in a log file nobody reads, after the game is already up.
+// The launcher checks the version once, before the process exists, and says so
+// in the window in plain words. A game that is not the supported version is not
+// launched at all; `version_check = 0` in tesmioloader.ini, or --ignore-version,
+// turns the refusal back into a warning for whoever is porting to a new build.
+//
+// SOVIET64.exe carries no VERSIONINFO resource - FileVersion is 0.0.0.0 - so
+// there is nothing to ask the shell for. The version is read out of the only
+// place the game itself keeps it: the four numbers it formats its own main-menu
+// line from. See ReadGameVersion.
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -95,6 +116,34 @@
 
 #define MAX_PLUGINS     32                  // mirrors the loader's own cap
 #define WALK_UP_LEVELS  8
+
+// The one build of the game this project is written against. Every hard-coded
+// rva in the loader and in every plugin belongs to it, docs/02-findings.md
+// describes it, and nothing here has ever run against another one.
+//
+// Two independent facts about the same exe, and they answer different
+// questions. The four numbers are what the game prints in its own main menu and
+// what a player calls "the version". The PE TimeDateStamp is the build: a
+// hotfix that leaves the numbers alone still moves code, and the stamp is the
+// only thing that notices.
+//
+// This is compiled in rather than configurable on purpose. It is not a
+// preference - it is a statement about which addresses this binary was built
+// with, and a config key that let it be changed would only produce a launcher
+// that injects confidently into a game it cannot patch.
+#define GAME_VER_MAJOR  1
+#define GAME_VER_MINOR  1
+#define GAME_VER_PATCH  1
+#define GAME_VER_BUILD  7
+#define GAME_VER_TEXT   L"1.1.1.7"
+#define GAME_VER_STAMP  0x69C4098Cu         // 2026-03-25 16:13:00 UTC
+
+// The ICON resource in src\tesmiolauncher.rc - logo.ico, generated from
+// logo.png, ten sizes. Windows takes the lowest-numbered ICON as the
+// executable's application icon, which is why it is 1; the same resource is
+// loaded by hand below for the window itself, because a window's icon comes
+// from its class and not from the exe.
+#define IDI_TSM_LOGO    1
 
 // ---------------------------------------------------------------- messages
 //
@@ -405,6 +454,283 @@ static bool FindViaSteam(wchar_t* out, size_t n)
     return found;
 }
 
+// ---------------------------------------------------------------- the version gate
+//
+// Whole-file binary read, used by both halves below. ReadAll above is
+// char-based and capped at 4 MB for Steam's vdf files; SOVIET64.exe is 10 MB
+// and a plugin DLL can be larger still, and both of their paths are wide.
+static unsigned char* ReadBinary(const wchar_t* path, size_t* outLen)
+{
+    HANDLE h = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
+                           NULL, OPEN_EXISTING, 0, NULL);
+    if (h == INVALID_HANDLE_VALUE) return NULL;
+
+    DWORD size = GetFileSize(h, NULL);
+    if (size == INVALID_FILE_SIZE || size > (64u << 20)) { CloseHandle(h); return NULL; }
+
+    unsigned char* buf = (unsigned char*)malloc(size ? size : 1);
+    DWORD got = 0;
+    if (!buf || !ReadFile(h, buf, size, &got, NULL)) { free(buf); CloseHandle(h); return NULL; }
+
+    CloseHandle(h);
+    *outLen = got;
+    return buf;
+}
+
+// What the exe on disk turned out to be.
+//
+//   GV_OK          this is the build every address was verified against
+//   GV_REBUILD     it says 1.1.1.7 and is not the same binary - a hotfix that
+//                  left the printed version alone. Allowed, and said out loud
+//   GV_WRONG       it says something else. Refused
+//   GV_UNKNOWN     the numbers could not be read and the stamp does not match.
+//                  Refused, because "not recognisable" is not "fine"
+enum { GV_OK = 0, GV_REBUILD, GV_WRONG, GV_UNKNOWN };
+
+struct GameVersion
+{
+    int      v[4];              // -1 when the numbers could not be read
+    bool     known;
+    unsigned stamp;             // PE TimeDateStamp, 0 when the headers would not parse
+    int      verdict;
+    wchar_t  text[32];          // "1.1.1.7", or "unknown"
+};
+
+// The one string the game formats its own version line from. It is the
+// anchor for everything below: find it, find the instruction that points at
+// it, and the four numbers are in the argument set-up right in front of that
+// instruction.
+static const char kVersionFormat[] = "v%d.%d.%d.%d (64 bit DX11.1)";
+
+static const unsigned char* FindBytes(const unsigned char* hay, size_t hayLen,
+                                      const void* needle, size_t needleLen)
+{
+    if (needleLen == 0 || hayLen < needleLen) return NULL;
+    const unsigned char* first = (const unsigned char*)needle;
+    for (size_t i = 0; i + needleLen <= hayLen; i++)
+        if (hay[i] == *first && memcmp(hay + i, needle, needleLen) == 0)
+            return hay + i;
+    return NULL;
+}
+
+static unsigned Rd32(const unsigned char* p) { unsigned v; memcpy(&v, p, 4); return v; }
+
+// Reads the version out of SOVIET64.exe without running it or loading it as a
+// module - the file is parsed as data, which is the only safe way to look at an
+// executable this program is about to inject into.
+//
+// The game has no VERSIONINFO resource, so the version has to come from the
+// code. The main menu prints it through
+//
+//     sprintf(buf, "v%d.%d.%d.%d (64 bit DX11.1)", 1, 1, 1, 7)
+//
+// and in the 1.1.1.7 build that call site sets its arguments up like this, at
+// rva 0x28C775..0x28C788:
+//
+//     C7 44 24 20 07 00 00 00    mov  dword ptr [rsp+0x20], 7   ; 5th arg
+//     BA 01 00 00 00             mov  edx, 1                    ; 2nd
+//     44 8B CA                   mov  r9d, edx                  ; 4th
+//     44 8B C2                   mov  r8d, edx                  ; 3rd
+//     48 8D 0D 51 9A 60 00       lea  rcx, [rip+0x609A51]       ; the format
+//
+// So: locate the format string in .rdata, scan .text for the one rip-relative
+// lea that resolves to it, and read the four immediates out of the 64 bytes in
+// front of it. The scan is deliberately not a disassembler - it looks for the
+// exact encodings that can put a small constant in each of those four places,
+// and the last write to each wins, which is the order a real decode would have
+// produced anyway. Anything it does not recognise leaves the numbers unread
+// rather than wrong, and the TimeDateStamp still has the final say.
+static void ReadGameVersion(const wchar_t* exe, GameVersion* g)
+{
+    memset(g, 0, sizeof(*g));
+    g->v[0] = g->v[1] = g->v[2] = g->v[3] = -1;
+    g->verdict = GV_UNKNOWN;
+    wcscpy_s(g->text, _countof(g->text), L"unknown");
+
+    size_t len = 0;
+    unsigned char* d = ReadBinary(exe, &len);
+    if (!d) return;
+
+    for (;;)                                    // one pass, `break` is the exit
+    {
+        if (len < 0x400 || d[0] != 'M' || d[1] != 'Z') break;
+
+        unsigned pe = Rd32(d + 0x3C);
+        if (pe + 0x108 > len) break;
+        if (memcmp(d + pe, "PE\0\0", 4) != 0) break;
+
+        unsigned short nsec  = *(unsigned short*)(d + pe + 6);
+        unsigned short optsz = *(unsigned short*)(d + pe + 20);
+        unsigned short magic = *(unsigned short*)(d + pe + 24);
+        g->stamp = Rd32(d + pe + 8);
+
+        if (magic != 0x20B) break;              // not PE32+, so not this game
+        if (!nsec || nsec > 96) break;
+
+        unsigned secOff = pe + 24 + optsz;
+        if (secOff + (unsigned)nsec * 40 > len) break;
+
+        // The format string, and the rva it lives at.
+        const unsigned char* at = FindBytes(d, len, kVersionFormat, sizeof(kVersionFormat));
+        if (!at) break;
+        size_t strFile = (size_t)(at - d);
+
+        unsigned strRva = 0, textRva = 0, textOff = 0, textLen = 0;
+        for (int i = 0; i < nsec; i++)
+        {
+            const unsigned char* s = d + secOff + i * 40;
+            unsigned vaddr = Rd32(s + 12), rsize = Rd32(s + 16), raddr = Rd32(s + 20);
+            if (raddr > len || rsize > len - raddr) continue;
+
+            if (strFile >= raddr && strFile < (size_t)raddr + rsize)
+                strRva = vaddr + (unsigned)(strFile - raddr);
+            if (memcmp(s, ".text", 5) == 0 && !textRva)
+            {
+                textRva = vaddr;
+                textOff = raddr;
+                textLen = rsize;
+            }
+        }
+        if (!strRva || !textLen) break;
+
+        // lea r64, [rip+disp32]: 48/4C 8D, modrm mod=00 rm=101. The whole
+        // instruction is 7 bytes and rip is what follows it.
+        const unsigned char* text = d + textOff;
+        const unsigned char* lea  = NULL;
+        for (unsigned i = 0; i + 7 <= textLen; i++)
+        {
+            if ((text[i] != 0x48 && text[i] != 0x4C) || text[i + 1] != 0x8D) continue;
+            if ((text[i + 2] & 0xC7) != 0x05) continue;
+
+            int disp = (int)Rd32(text + i + 3);
+            if (textRva + i + 7 + (unsigned)disp == strRva) { lea = text + i; break; }
+        }
+        if (!lea) break;
+
+        // The 64 bytes in front of it. Each pattern is one way of putting a
+        // small constant into one of the four argument slots; edx feeds r8d and
+        // r9d in this build, which is why the version reads 1.1.1 from a single
+        // immediate.
+        const unsigned char* w = (lea - text >= 64) ? lea - 64 : text;
+        int edx = -1, r8 = -1, r9 = -1, stk = -1;
+
+        for (const unsigned char* p = w; p + 2 < lea; p++)
+        {
+            unsigned imm;
+            if (p[0] == 0xBA && p + 5 <= lea && (imm = Rd32(p + 1)) < 256)
+                edx = (int)imm;                                     // mov edx, imm32
+            else if (p[0] == 0x41 && p[1] == 0xB8 && p + 6 <= lea && (imm = Rd32(p + 2)) < 256)
+                r8 = (int)imm;                                      // mov r8d, imm32
+            else if (p[0] == 0x41 && p[1] == 0xB9 && p + 6 <= lea && (imm = Rd32(p + 2)) < 256)
+                r9 = (int)imm;                                      // mov r9d, imm32
+            else if (p[0] == 0x44 && p[1] == 0x8B && p[2] == 0xC2)
+                r8 = edx;                                           // mov r8d, edx
+            else if (p[0] == 0x44 && p[1] == 0x8B && p[2] == 0xCA)
+                r9 = edx;                                           // mov r9d, edx
+            else if (p[0] == 0xC7 && p[1] == 0x44 && p[2] == 0x24 && p + 8 <= lea &&
+                     (imm = Rd32(p + 4)) < 256)
+                stk = (int)imm;                                     // mov [rsp+d8], imm32
+        }
+
+        if (edx < 0 || r8 < 0 || r9 < 0 || stk < 0) break;
+
+        g->v[0] = edx; g->v[1] = r8; g->v[2] = r9; g->v[3] = stk;
+        g->known = true;
+        _snwprintf_s(g->text, _countof(g->text), _TRUNCATE, L"%d.%d.%d.%d",
+                     g->v[0], g->v[1], g->v[2], g->v[3]);
+        break;
+    }
+
+    free(d);
+
+    // The verdict. The stamp is the stronger fact and settles both of the cases
+    // the numbers cannot: an exe whose numbers would not read is still this
+    // build if it is byte-for-byte the one the stamp names, and one that reads
+    // 1.1.1.7 out of a different binary is a rebuild rather than the build.
+    bool numbersMatch = g->known &&
+                        g->v[0] == GAME_VER_MAJOR && g->v[1] == GAME_VER_MINOR &&
+                        g->v[2] == GAME_VER_PATCH && g->v[3] == GAME_VER_BUILD;
+    bool stampMatch   = g->stamp == GAME_VER_STAMP;
+
+    if (numbersMatch)   g->verdict = stampMatch ? GV_OK : GV_REBUILD;
+    else if (g->known)  g->verdict = GV_WRONG;
+    else                g->verdict = stampMatch ? GV_OK : GV_UNKNOWN;
+}
+
+// One exe is asked about many times - at startup, when the path changes, and
+// again on Launch - and reading 10 MB per keystroke is not free. Keyed on the
+// path, so a different path is always re-read.
+static wchar_t     g_verPath[MAX_PATH];
+static GameVersion g_ver;
+
+static const GameVersion* GameVersionOf(const wchar_t* exe)
+{
+    if (!exe || !exe[0]) return NULL;
+
+    if (_wcsicmp(g_verPath, exe) != 0)
+    {
+        ReadGameVersion(exe, &g_ver);
+        wcscpy_s(g_verPath, _countof(g_verPath), exe);
+
+        Msg(L"game version %s (build %08X), %s", g_ver.text, g_ver.stamp,
+            g_ver.verdict == GV_OK      ? L"supported" :
+            g_ver.verdict == GV_REBUILD ? L"supported version, different build" :
+            g_ver.verdict == GV_WRONG   ? L"NOT supported" : L"unreadable");
+    }
+    return &g_ver;
+}
+
+// Whether this exe may be injected into. The switch is deliberately not in the
+// window: turning the gate off is for whoever is porting the addresses to a new
+// build, and that person can edit an ini or pass a flag.
+static bool g_versionCheck = true;
+
+static bool VersionRefuses(const GameVersion* g)
+{
+    if (!g_versionCheck) return false;
+    return !g || g->verdict == GV_WRONG || g->verdict == GV_UNKNOWN;
+}
+
+// The two lines the window shows, and what --find prints. `req` never changes -
+// it is the whole point that the supported version is stated even when nothing
+// is wrong - and `got` is what this exe turned out to be.
+static void VersionRequirementText(wchar_t* out, size_t n)
+{
+    _snwprintf_s(out, n, _TRUNCATE,
+                 g_versionCheck
+                     ? L"Requires Workers & Resources v" GAME_VER_TEXT
+                       L" (64 bit)"
+                     : L"Built for Workers & Resources v" GAME_VER_TEXT
+                       L" (64 bit) - the check is off, other versions may crash.");
+}
+
+static void VersionStatusText(const GameVersion* g, wchar_t* out, size_t n)
+{
+    if (!g) { wcscpy_s(out, n, L"Installed: no game selected"); return; }
+
+    switch (g->verdict)
+    {
+    case GV_OK:
+        _snwprintf_s(out, n, _TRUNCATE, L"Installed: v%s - supported", g->text);
+        break;
+    case GV_REBUILD:
+        _snwprintf_s(out, n, _TRUNCATE,
+                     L"Installed: v%s, but a different build of it (%08X) - "
+                     L"patches may not fit", g->text, g->stamp);
+        break;
+    case GV_WRONG:
+        _snwprintf_s(out, n, _TRUNCATE,
+                     L"Installed: v%s - NOT supported, %s", g->text,
+                     g_versionCheck ? L"launch refused" : L"launching anyway");
+        break;
+    default:
+        _snwprintf_s(out, n, _TRUNCATE,
+                     L"Installed: version could not be read - %s",
+                     g_versionCheck ? L"launch refused" : L"launching anyway");
+        break;
+    }
+}
+
 // ---------------------------------------------------------------- config
 //
 // The ini beside the DLL, which is the one the loader reads: baseDir there is
@@ -487,27 +813,6 @@ static bool QueryPluginApiVersion(const wchar_t* fullPath, unsigned* out)
     return true;
 }
 
-// Whole-file binary read for the signature check. ReadAll above is char-based
-// and capped at 4 MB for Steam's vdf files; a plugin DLL can be larger than
-// that, and its path is wide.
-static unsigned char* ReadBinary(const wchar_t* path, size_t* outLen)
-{
-    HANDLE h = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
-                           NULL, OPEN_EXISTING, 0, NULL);
-    if (h == INVALID_HANDLE_VALUE) return NULL;
-
-    DWORD size = GetFileSize(h, NULL);
-    if (size == INVALID_FILE_SIZE || size > (32u << 20)) { CloseHandle(h); return NULL; }
-
-    unsigned char* buf = (unsigned char*)malloc(size ? size : 1);
-    DWORD got = 0;
-    if (!buf || !ReadFile(h, buf, size, &got, NULL)) { free(buf); CloseHandle(h); return NULL; }
-
-    CloseHandle(h);
-    *outLen = got;
-    return buf;
-}
-
 // Verifies <dllPath>.sig against the bytes of dllPath, using the public key
 // this binary was built with. The signature covers the DLL exactly as it sits
 // on disk, so editing the file - one byte is enough - turns a valid seal into
@@ -563,50 +868,66 @@ static int CheckPluginSignature(const wchar_t* dllPath)
 static int CheckPluginSignature(const wchar_t*) { return TSM_SIG_NONE; }
 #endif
 
-// Empty when the plugin's own reported version matches this build of the
-// loader. Otherwise the same two rejection reasons LoadPlugins logs -
-// "not initialised" or "no TsmPluginApiVersion export" - phrased for the
-// window and the --find printout rather than the log file.
-static void PluginWarning(const PluginEntry* e, wchar_t* out, size_t n)
+// Empty when the plugin's own reported version is one this loader accepts.
+// Otherwise the same two rejection reasons LoadPlugins logs - "not initialised"
+// or "no TsmPluginApiVersion export" - phrased for the window and the --find
+// printout rather than the log file.
+//
+// `brief` is the window's form. A checkbox in a two-column list has room for
+// roughly fifty characters, and the long form is written for a console line
+// that has as many as it likes.
+static void PluginWarning(const PluginEntry* e, wchar_t* out, size_t n, bool brief)
 {
     out[0] = 0;
     if (e->apiOk) return;
 
+    // One sentence for both directions. A plugin can be too old (built before
+    // TSM_API_VERSION_MIN, so a field it reads has moved) or too new (built
+    // against a header this loader does not have yet), and the range says which
+    // without the reader having to be told the rule.
     if (e->apiKnown)
         _snwprintf_s(out, n, _TRUNCATE,
-                     L"incompatible: wants API %u, this loader is %u",
-                     e->apiVersion, TSM_API_VERSION);
+                     brief ? L"API %u, needs %u-%u"
+                           : L"incompatible: reports API %u, this loader takes %u to %u",
+                     e->apiVersion, TSM_API_VERSION_MIN, TSM_API_VERSION);
     else
-        _snwprintf_s(out, n, _TRUNCATE, L"not a tesmioloader plugin");
+        wcscpy_s(out, n, brief ? L"not a plugin" : L"not a tesmioloader plugin");
 }
 
-// The provenance half of a plugin's label. A valid seal is stated; a missing
-// one is stated too, because an unmarked foreign DLL and a genuine Tesmio
-// build would otherwise look identical in the window. Empty when this binary
-// was built without the signing headers - then there is nothing to state.
-static void PluginSigNote(const PluginEntry* e, wchar_t* out, size_t n)
+// The provenance half of a plugin's label, and only a valid seal is stated.
+//
+// A plugin with no .sig gets NOTHING - no mark at all. It used to say "not from
+// Tesmio", which reads as an accusation against every third-party plugin and
+// against every build made from source without the private key, which is most
+// of them. Absence of a mark is the honest form of "nobody claims to have built
+// this", and the mark that is there means what it says.
+//
+// A signature that exists and does not verify is the one case that still
+// speaks. It is not "unsigned": somebody signed these bytes and the bytes then
+// changed, and silence there would read as ordinary third-party provenance.
+static void PluginSigNote(const PluginEntry* e, wchar_t* out, size_t n, bool brief)
 {
     out[0] = 0;
 #if TSM_LAUNCHER_SIGNING
     switch (e->sig)
     {
-    case TSM_SIG_OK:  wcscpy_s(out, n, L"signed by Tesmio"); break;
-    case TSM_SIG_BAD: wcscpy_s(out, n, L"SIGNATURE INVALID - not from Tesmio"); break;
-    default:          wcscpy_s(out, n, L"not from Tesmio"); break;
+    case TSM_SIG_OK:  wcscpy_s(out, n, brief ? L"tesmio" : L"signed by Tesmio"); break;
+    case TSM_SIG_BAD: wcscpy_s(out, n, L"SIGNATURE INVALID"); break;
+    default:          break;                    // unsigned: say nothing
     }
 #else
-    (void)e; (void)n;
+    (void)e; (void)n; (void)brief;
 #endif
 }
 
 // Everything the window and --find have to say about a plugin, in one string:
 // whose signature it carries, then whether this loader will initialise it.
 // Can come back empty, and both callers then print the bare file name.
-static void PluginNote(const PluginEntry* e, wchar_t* out, size_t n)
+static void PluginNote(const PluginEntry* e, wchar_t* out, size_t n, bool brief)
 {
     wchar_t sig[96], warn[96];
-    PluginSigNote(e, sig, _countof(sig));
-    PluginWarning(e, warn, _countof(warn));
+    PluginSigNote(e, sig, _countof(sig), brief);
+    PluginWarning(e, warn, _countof(warn), brief);
 
     if (sig[0] && warn[0])
         _snwprintf_s(out, n, _TRUNCATE, L"%s, %s", sig, warn);
@@ -648,8 +969,13 @@ static void ScanPlugins(const wchar_t* dllDir)
 
         wchar_t full[MAX_PATH];
         Join(full, _countof(full), pluginsDir, fd.cFileName);
+        // The same range LoadPlugins accepts, and it must stay the same range:
+        // a box the launcher ticks and the loader then refuses would be lying
+        // about what ticking it does. See tesmio_api.h on TSM_API_VERSION_MIN.
         e->apiKnown = QueryPluginApiVersion(full, &e->apiVersion);
-        e->apiOk    = e->apiKnown && e->apiVersion == TSM_API_VERSION;
+        e->apiOk    = e->apiKnown &&
+                      e->apiVersion >= TSM_API_VERSION_MIN &&
+                      e->apiVersion <= TSM_API_VERSION;
         e->sig      = CheckPluginSignature(full);
 
         // The loader will refuse to initialise this one regardless of what the
@@ -665,8 +991,13 @@ static void ScanPlugins(const wchar_t* dllDir)
 static void ReadConfig()
 {
     g_host = GetPrivateProfileIntA("tesmioloader", "plugins", 1, g_iniA) != 0;
-    GetPrivateProfileStringW(L"tesmioloader", L"version", L"unknown", 
+    GetPrivateProfileStringW(L"tesmioloader", L"version", L"unknown",
                              g_version, _countof(g_version), g_ini);
+
+    // The version gate. Absent means on: a fresh install must refuse a game it
+    // cannot patch, and turning that off has to be something someone did on
+    // purpose. --ignore-version does the same for one run.
+    g_versionCheck = GetPrivateProfileIntA("tesmioloader", "version_check", 1, g_iniA) != 0;
 }
 
 // Creates the ini when it is not there. Everything the loader does not find in
@@ -787,25 +1118,167 @@ static bool Inject(const wchar_t* gameFull, const wchar_t* dllFull)
 #define IDC_BROWSE  101
 #define IDC_HOST    102
 #define IDC_STATUS  103
+#define IDC_VERREQ  104             // "requires v1.1.1.7", always the same words
+#define IDC_VERGOT  105             // what the exe on disk turned out to be
+#define IDC_LIST    106             // the scrolling viewport the checkboxes live in
 #define IDC_PLUGIN0 200
+
+#define LIST_CLASS  L"tesmiopluginlist"
+#define LIST_ROW    20              // one plugin row, 96 dpi
+#define LIST_COLS   2
+#define LIST_MAXROW 8               // taller than this and it scrolls instead
 
 static HFONT   g_font;
 static HWND    g_path;
 static HWND    g_hostBox;
+static HWND    g_verGot;
+static HWND    g_list;
 static int     g_dpi = 96;
 static bool    g_launched;
 static wchar_t g_dllFull[MAX_PATH];
 
 static int S(int v) { return MulDiv(v, g_dpi, 96); }
 
+// Physical pixels, all three - the list is scrolled and measured in device
+// units, because a scroll position rounded through S() would drift.
+static int g_listContent;           // the whole column of rows
+static int g_listView;              // what fits on screen at once
+static int g_listPos;               // how far down we are
+
+static HWND ChildPx(HWND parent, const wchar_t* cls, const wchar_t* text,
+                    DWORD style, int x, int y, int w, int h, int id)
+{
+    HWND c = CreateWindowExW(0, cls, text, WS_CHILD | WS_VISIBLE | style,
+                             x, y, w, h, parent, (HMENU)(INT_PTR)id, NULL, NULL);
+    if (c && g_font) SendMessageW(c, WM_SETFONT, (WPARAM)g_font, TRUE);
+    return c;
+}
+
 static HWND Child(HWND parent, const wchar_t* cls, const wchar_t* text,
                   DWORD style, int x, int y, int w, int h, int id)
 {
-    HWND c = CreateWindowExW(0, cls, text, WS_CHILD | WS_VISIBLE | style,
-                             S(x), S(y), S(w), S(h), parent,
-                             (HMENU)(INT_PTR)id, NULL, NULL);
-    if (c && g_font) SendMessageW(c, WM_SETFONT, (WPARAM)g_font, TRUE);
-    return c;
+    return ChildPx(parent, cls, text, style, S(x), S(y), S(w), S(h), id);
+}
+
+// --- the plugin list -----------------------------------------------------
+//
+// A child window of its own rather than checkboxes on the dialog face, for one
+// reason: the loader takes up to 32 plugins, and 32 rows at 20 px is taller
+// than the work area of a 768-line laptop screen once everything else is on the
+// window too. The old layout grew the window to fit the count, which at eight
+// or so plugins put Launch off the bottom edge - visible only to whoever had
+// that many installed.
+//
+// Two columns halve the rows, and WS_VSCROLL takes whatever is left over. The
+// scroll is ScrollWindowEx with SW_SCROLLCHILDREN, so the checkboxes are moved
+// by the OS and nothing has to be re-created or re-positioned by hand.
+//
+// A child window costs two things and both are paid below: its children's
+// WM_COMMAND and WM_CTLCOLORSTATIC arrive here instead of at the main window
+// and are forwarded, and tab traversal only descends into it because it is
+// created WS_EX_CONTROLPARENT.
+
+static void ListSetScroll(HWND list)
+{
+    SCROLLINFO si = { sizeof(si) };
+    si.fMask = SIF_RANGE | SIF_PAGE | SIF_POS;
+    si.nMin  = 0;
+    si.nMax  = g_listContent > 0 ? g_listContent - 1 : 0;
+    si.nPage = (UINT)(g_listView > 0 ? g_listView : 1);
+    si.nPos  = g_listPos;
+
+    // Without SIF_DISABLENOSCROLL Windows hides the bar outright when the range
+    // fits the page, which is what should happen with six plugins in a list
+    // that holds sixteen.
+    SetScrollInfo(list, SB_VERT, &si, TRUE);
+}
+
+static void ListScrollTo(HWND list, int pos)
+{
+    int limit = g_listContent - g_listView;
+    if (limit < 0) limit = 0;
+    if (pos < 0)     pos = 0;
+    if (pos > limit) pos = limit;
+    if (pos == g_listPos) return;
+
+    int dy = g_listPos - pos;
+    g_listPos = pos;
+
+    ScrollWindowEx(list, 0, dy, NULL, NULL, NULL, NULL,
+                   SW_SCROLLCHILDREN | SW_INVALIDATE | SW_ERASE);
+    ListSetScroll(list);
+    UpdateWindow(list);
+}
+
+// Tab traversal can put the focus on a row that is scrolled out of sight, and a
+// focus ring nobody can see is worse than no focus at all. A child's client y is
+// already the scrolled one, so its position in the content is that plus g_listPos.
+static void ListReveal(HWND list, HWND child)
+{
+    if (!child || GetParent(child) != list) return;
+
+    RECT r;
+    GetWindowRect(child, &r);
+
+    POINT p = { r.left, r.top };
+    ScreenToClient(list, &p);
+    int h = r.bottom - r.top;
+
+    if (p.y < 0)                     ListScrollTo(list, g_listPos + p.y);
+    else if (p.y + h > g_listView)   ListScrollTo(list, g_listPos + (p.y + h - g_listView));
+}
+
+static LRESULT CALLBACK ListProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
+{
+    switch (msg)
+    {
+    case WM_VSCROLL:
+    {
+        SCROLLINFO si = { sizeof(si) };
+        si.fMask = SIF_ALL;
+        GetScrollInfo(hwnd, SB_VERT, &si);
+
+        int pos = si.nPos;
+        switch (LOWORD(wp))
+        {
+        case SB_LINEUP:        pos -= S(LIST_ROW);   break;
+        case SB_LINEDOWN:      pos += S(LIST_ROW);   break;
+        case SB_PAGEUP:        pos -= g_listView;    break;
+        case SB_PAGEDOWN:      pos += g_listView;    break;
+        case SB_TOP:           pos  = 0;             break;
+        case SB_BOTTOM:        pos  = g_listContent; break;
+        case SB_THUMBTRACK:
+        case SB_THUMBPOSITION: pos  = si.nTrackPos;  break;
+        default: return 0;
+        }
+        ListScrollTo(hwnd, pos);
+        return 0;
+    }
+
+    case WM_MOUSEWHEEL:
+    {
+        UINT lines = 3;
+        SystemParametersInfoW(SPI_GETWHEELSCROLLLINES, 0, &lines, 0);
+        if (lines == 0 || lines > 20) lines = 3;    // 0 is "no scroll", WHEEL_PAGESCROLL is huge
+
+        int delta = GET_WHEEL_DELTA_WPARAM(wp);
+        ListScrollTo(hwnd, g_listPos - delta * (int)lines * S(LIST_ROW) / WHEEL_DELTA);
+        return 0;
+    }
+
+    case WM_COMMAND:
+        // A checkbox click, and BN_SETFOCUS from tab traversal. Both belong to
+        // the main window; the second one also has to bring the row into view
+        // first, because the focus may have landed below the fold.
+        if (HIWORD(wp) == BN_SETFOCUS) ListReveal(hwnd, (HWND)lp);
+        return SendMessageW(GetParent(hwnd), msg, wp, lp);
+
+    case WM_CTLCOLORSTATIC:
+        // Checkboxes ask their own parent, which is now this window rather than
+        // the dialog - forwarded so the red-text rule stays in one place.
+        return SendMessageW(GetParent(hwnd), msg, wp, lp);
+    }
+    return DefWindowProcW(hwnd, msg, wp, lp);
 }
 
 static void SyncPluginBoxes()
@@ -852,6 +1325,35 @@ static bool ResolveEdit(wchar_t* out, size_t n)
     return true;
 }
 
+// --- the version line ----------------------------------------------------
+
+static bool g_verRed;               // the detected-version line is not "supported"
+
+static void SetVersionLine(const GameVersion* g)
+{
+    wchar_t line[192];
+    VersionStatusText(g, line, _countof(line));
+
+    g_verRed = g && g->verdict != GV_OK;
+    if (g_verGot)
+    {
+        SetWindowTextW(g_verGot, line);
+        InvalidateRect(g_verGot, NULL, TRUE);   // the colour may have changed too
+    }
+}
+
+// Re-reads whatever exe the edit box currently names and re-labels the line.
+// Called whenever that text can have changed - at startup, after Browse, when
+// the box loses the focus - so the window is never stale. Launch asks again
+// regardless, because that is the one that decides.
+static const GameVersion* RefreshVersionUi()
+{
+    wchar_t game[MAX_PATH];
+    const GameVersion* g = ResolveEdit(game, _countof(game)) ? GameVersionOf(game) : NULL;
+    SetVersionLine(g);
+    return g;
+}
+
 static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 {
     switch (msg)
@@ -862,14 +1364,24 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         // the dialog face rather than on a white field.
         SetBkColor((HDC)wp, GetSysColor(COLOR_BTNFACE));
 
-        // A plugin box whose own reported API version does not match this
-        // loader is painted red rather than only carrying a bracketed suffix
+        HWND ctl = (HWND)lp;
+
+        // The game version, when it is anything but the one this build patches.
+        // Red because it is the difference between the game starting and the
+        // game dying on the first hook.
+        if (ctl == g_verGot && g_verRed)
+        {
+            SetTextColor((HDC)wp, RGB(176, 0, 0));
+            return (LRESULT)GetSysColorBrush(COLOR_BTNFACE);
+        }
+
+        // A plugin box whose own reported API version this loader does not
+        // accept is painted red rather than only carrying a bracketed suffix
         // in its label - the loader will refuse to initialise it exactly as
         // if it were unchecked, so the box lies about what ticking it does
         // unless the mismatch is obvious at a glance. A signature file that
         // does not verify gets the same red: the bytes changed after they
         // were signed, which is a stronger statement than "not from Tesmio".
-        HWND ctl = (HWND)lp;
         for (int i = 0; i < g_plugCount; i++)
         {
             if (g_plug[i].box == ctl &&
@@ -882,11 +1394,21 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         return (LRESULT)GetSysColorBrush(COLOR_BTNFACE);
     }
 
+    case WM_MOUSEWHEEL:
+        // The wheel goes to whatever has the focus, which is hardly ever the
+        // list. Nothing else in this window scrolls, so hand it over.
+        if (g_list) return SendMessageW(g_list, msg, wp, lp);
+        return 0;
+
     case WM_COMMAND:
     {
         int id = LOWORD(wp);
 
-        if (id == IDC_BROWSE) { Browse(hwnd); return 0; }
+        if (id == IDC_BROWSE) { Browse(hwnd); RefreshVersionUi(); return 0; }
+
+        // Typing a path re-checks it when the box is left, not per keystroke:
+        // the check reads the whole 10 MB exe.
+        if (id == IDC_PATH && HIWORD(wp) == EN_KILLFOCUS) { RefreshVersionUi(); return 0; }
 
         if (id == IDC_HOST)
         {
@@ -913,6 +1435,41 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
                             L"That is not a Workers & Resources install.\n\n"
                             L"Point this at SOVIET64.exe, or at the folder holding it.",
                             L"tesmioloader", MB_ICONWARNING | MB_OK);
+                SetFocus(g_path);
+                return 0;
+            }
+
+            // The gate. Asked here rather than only at startup because the path
+            // can have been edited since, and refused before anything is
+            // written or started - a wrong game is not remembered as the one to
+            // use next time either.
+            const GameVersion* gv = GameVersionOf(game);
+            SetVersionLine(gv);
+
+            if (VersionRefuses(gv))
+            {
+                wchar_t what[64];
+                if (gv && gv->known)
+                    _snwprintf_s(what, _countof(what), _TRUNCATE, L"v%s", gv->text);
+                else
+                    wcscpy_s(what, _countof(what), L"a version that could not be read");
+
+                wchar_t msg[768];
+                _snwprintf_s(msg, _countof(msg), _TRUNCATE,
+                    L"This game is %s, and tesmioloader is built for v"
+                    GAME_VER_TEXT L".\n\n"
+                    L"Every address it patches belongs to that one build. On any "
+                    L"other, the hooks either refuse - leaving a loader that does "
+                    L"nothing - or land in code that has moved, which crashes the "
+                    L"game with nothing in the log to explain it. So it is not "
+                    L"started at all.\n\n"
+                    L"Install v" GAME_VER_TEXT L", or, if you are porting the "
+                    L"addresses yourself: version_check = 0 in tesmioloader.ini, "
+                    L"or run the launcher with --ignore-version.",
+                    what);
+
+                MessageBoxW(hwnd, msg, L"tesmioloader - unsupported game version",
+                            MB_ICONERROR | MB_OK);
                 SetFocus(g_path);
                 return 0;
             }
@@ -987,31 +1544,100 @@ static bool ShowWindowUi(const wchar_t* gameFull)
         }
     }
 
+    HINSTANCE inst = GetModuleHandleW(NULL);
+
+    // The window's icon is its class's, not the executable's - an exe with an
+    // ICON resource gets it in Explorer and on the taskbar and still shows the
+    // default in its own title bar unless the class carries one. Both sizes are
+    // asked for by hand: the title bar takes the small one and Alt-Tab the
+    // large, and letting one be derived from the other is how a logo ends up
+    // looking smeared in exactly one of those two places.
+    //
+    // logo.ico is only there when build.bat found rc.exe. Without it, fall back
+    // to what this used to show - the game's own icon.
+    HICON iconBig = (HICON)LoadImageW(inst, MAKEINTRESOURCEW(IDI_TSM_LOGO), IMAGE_ICON,
+                                      GetSystemMetrics(SM_CXICON),
+                                      GetSystemMetrics(SM_CYICON), 0);
+    HICON iconSmall = (HICON)LoadImageW(inst, MAKEINTRESOURCEW(IDI_TSM_LOGO), IMAGE_ICON,
+                                        GetSystemMetrics(SM_CXSMICON),
+                                        GetSystemMetrics(SM_CYSMICON), 0);
+    if (!iconBig && gameFull[0])
+    {
+        iconBig = ExtractIconW(inst, gameFull, 0);
+        if (iconBig == (HICON)1) iconBig = NULL;
+    }
+
     WNDCLASSEXW wc = { sizeof(wc) };
     wc.lpfnWndProc   = WndProc;
-    wc.hInstance     = GetModuleHandleW(NULL);
+    wc.hInstance     = inst;
     // UNICODE is not defined here, so MAKEINTRESOURCE in IDC_ARROW is the ANSI one.
     wc.hCursor       = LoadCursorW(NULL, (LPCWSTR)IDC_ARROW);
     wc.hbrBackground = GetSysColorBrush(COLOR_BTNFACE);
     wc.lpszClassName = L"tesmiolauncher";
-    if (gameFull[0]) wc.hIcon = ExtractIconW(wc.hInstance, gameFull, 0);
-    if (wc.hIcon == (HICON)1) wc.hIcon = NULL;
+    wc.hIcon         = iconBig;
+    wc.hIconSm       = iconSmall ? iconSmall : iconBig;
     if (!RegisterClassExW(&wc)) { Fail(L"RegisterClassEx"); return false; }
 
-    // 96-dpi layout. The height follows the plugin count rather than scrolling:
-    // the loader caps at 32 plugins and six is what ships.
-    const int W       = 460;
+    // The scrolling viewport the plugin checkboxes live in. Its own class
+    // because it has its own scroll state and forwards its children's messages;
+    // WS_EX_CONTROLPARENT is put on the instance rather than here.
+    {
+        WNDCLASSEXW lc = { sizeof(lc) };
+        lc.lpfnWndProc   = ListProc;
+        lc.hInstance     = inst;
+        lc.hCursor       = LoadCursorW(NULL, (LPCWSTR)IDC_ARROW);
+        lc.hbrBackground = GetSysColorBrush(COLOR_BTNFACE);
+        lc.lpszClassName = LIST_CLASS;
+        if (!RegisterClassExW(&lc)) { Fail(L"RegisterClassEx(list)"); return false; }
+    }
+
+    // 96-dpi layout. Wider than it was because a plugin's label now shares a
+    // row with a second one, and every row still has to fit "resources.dll
+    // [signed by Tesmio]" without an ellipsis.
+    const int W       = 700;
     const int pad     = 12;
     const int rowH    = 22;
     const int btnW    = 92;
     const int btnH    = 26;
-    const int groupH  = 20 + rowH + (g_plugCount ? g_plugCount * 20 : 20) + 10;
+    const int lineH   = 16;
+
+    // Rows, then how many of them fit. The count no longer sets the window
+    // height: two columns halve it and the rest is scrolled, so a machine with
+    // 32 plugins gets the same window as one with two.
+    int listRows = (g_plugCount + LIST_COLS - 1) / LIST_COLS;
+    if (listRows < 1) listRows = 1;
+
+    int shownRows = listRows < LIST_MAXROW ? listRows : LIST_MAXROW;
+
+    // Everything except the list, in 96-dpi units, so the cap can be lowered
+    // again on a screen that would not take even LIST_MAXROW rows.
+    const int fixedH = pad + 18 + rowH + pad + lineH + lineH + pad
+                     + (18 + rowH + 12) + pad + lineH + pad + btnH + pad;
+    {
+        RECT frame = { 0, 0, S(W), S(fixedH) };
+        AdjustWindowRect(&frame, WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU, FALSE);
+
+        RECT work;
+        if (SystemParametersInfoW(SPI_GETWORKAREA, 0, &work, 0))
+        {
+            int room = (work.bottom - work.top) - (frame.bottom - frame.top);
+            int fits = room / S(LIST_ROW);
+            if (fits < 2) fits = 2;                 // something has to be visible
+            if (shownRows > fits) shownRows = fits;
+        }
+    }
+
+    const int listW   = W - 2 * pad - 24;
+    const int listH   = shownRows * LIST_ROW;
+    const int groupH  = 18 + rowH + listH + 12;
 
     int y = pad;
     const int labelY  = y;                      y += 18;
     const int pathY   = y;                      y += rowH + pad;
+    const int verReqY = y;                      y += lineH;
+    const int verGotY = y;                      y += lineH + pad;
     const int groupY  = y;                      y += groupH + pad;
-    const int statusY = y;                      y += 16 + pad;
+    const int statusY = y;                      y += lineH + pad;
     const int btnY    = y;                      y += btnH + pad;
 
     RECT rc = { 0, 0, S(W), S(y) };
@@ -1021,14 +1647,14 @@ static bool ShowWindowUi(const wchar_t* gameFull)
     int cx = (GetSystemMetrics(SM_CXSCREEN) - winW) / 2;
     int cy = (GetSystemMetrics(SM_CYSCREEN) - winH) / 2;
 
-wchar_t windowTitle[128];
-    _snwprintf_s(windowTitle, _countof(windowTitle), _TRUNCATE, 
+    wchar_t windowTitle[128];
+    _snwprintf_s(windowTitle, _countof(windowTitle), _TRUNCATE,
                  L"tesmioloader v. %s", g_version);
 
     HWND hwnd = CreateWindowExW(WS_EX_CONTROLPARENT, wc.lpszClassName,
                                 windowTitle, WS_OVERLAPPED | WS_CAPTION |
                                 WS_SYSMENU | WS_MINIMIZEBOX,
-                                cx, cy, winW, winH, NULL, NULL, wc.hInstance, NULL);
+                                cx, cy, winW, winH, NULL, NULL, inst, NULL);
     if (!hwnd) { Fail(L"CreateWindowEx"); return false; }
 
     Child(hwnd, L"STATIC", L"Game executable", 0, pad, labelY, W - 2 * pad, 16, 0);
@@ -1038,7 +1664,40 @@ wchar_t windowTitle[128];
     Child(hwnd, L"BUTTON", L"Browse...", WS_TABSTOP,
           W - pad - btnW, pathY, btnW, rowH, IDC_BROWSE);
 
-    Child(hwnd, L"BUTTON", L"Plugins", BS_GROUPBOX,
+    // Two lines about the version, and the first one never changes: which build
+    // this launcher is for has to be readable even when nothing is wrong with
+    // the one installed.
+    //
+    // SS_NOPREFIX on both, or "Workers & Resources" renders as "Workers
+    // Resources" with an underlined R - a static treats & as a mnemonic marker
+    // unless told not to.
+    {
+        wchar_t req[192];
+        VersionRequirementText(req, _countof(req));
+        Child(hwnd, L"STATIC", req, SS_NOPREFIX,
+              pad, verReqY, W - 2 * pad, lineH, IDC_VERREQ);
+    }
+    g_verGot = Child(hwnd, L"STATIC", L"", SS_ENDELLIPSIS | SS_NOPREFIX,
+                     pad, verGotY, W - 2 * pad, lineH, IDC_VERGOT);
+
+    // Before g_status exists, so the "game version ..." line this logs stays in
+    // the log buffer instead of replacing the status line's "ready".
+    RefreshVersionUi();
+
+    // WS_CLIPSIBLINGS, and it is the only control here that has it. A group box
+    // paints its whole rectangle, and everything in this group sits inside that
+    // rectangle - so without the style it wipes the plugin list on every
+    // repaint. The checkboxes inside the list are then still there, still
+    // enumerable and still clickable, and invisible until something else
+    // invalidates them: they are grandchildren, so the group box painting over
+    // their parent never asks them to draw again.
+    //
+    // The style goes here and nowhere else. It excludes every overlapping
+    // sibling from this window's own painting, which is exactly what a
+    // container wants and exactly what its contents do not - putting it on the
+    // controls as well makes each of them clip the group box out of itself, and
+    // the group box's rectangle covers all of them.
+    Child(hwnd, L"BUTTON", L"Plugins", BS_GROUPBOX | WS_CLIPSIBLINGS,
           pad, groupY, W - 2 * pad, groupH, 0);
 
     g_hostBox = Child(hwnd, L"BUTTON", L"Load plugins at all",
@@ -1046,32 +1705,62 @@ wchar_t windowTitle[128];
                       pad + 12, groupY + 18, W - 2 * pad - 24, rowH - 2, IDC_HOST);
     SendMessageW(g_hostBox, BM_SETCHECK, g_host ? BST_CHECKED : BST_UNCHECKED, 0);
 
+    g_list = CreateWindowExW(WS_EX_CONTROLPARENT, LIST_CLASS, NULL,
+                             WS_CHILD | WS_VISIBLE | WS_VSCROLL,
+                             S(pad + 12), S(groupY + 18 + rowH), S(listW), S(listH),
+                             hwnd, (HMENU)(INT_PTR)IDC_LIST, inst, NULL);
+    if (!g_list) { Fail(L"CreateWindowEx(list)"); return false; }
+
+    // The scroll bar has to be settled before the client width is measured -
+    // when it is showing it takes its width out of the client area, and the two
+    // columns are laid out in what is left.
+    g_listContent = listRows * S(LIST_ROW);
+    g_listView    = S(listH);
+    g_listPos     = 0;
+    ListSetScroll(g_list);
+
+    RECT lr;
+    GetClientRect(g_list, &lr);
+    const int colW = lr.right / LIST_COLS;
+
     for (int i = 0; i < g_plugCount; i++)
     {
         PluginEntry* e = &g_plug[i];
 
         wchar_t note[192];
-        PluginNote(e, note, _countof(note));
+        PluginNote(e, note, _countof(note), true);
 
         wchar_t label[256];
         if (note[0])
-            _snwprintf_s(label, _countof(label), _TRUNCATE, L"%s   [%s]", e->file, note);
+            _snwprintf_s(label, _countof(label), _TRUNCATE, L"%s  [%s]", e->file, note);
         else
             wcscpy_s(label, _countof(label), e->file);
 
-        e->box = Child(hwnd, L"BUTTON", label, BS_AUTOCHECKBOX | WS_TABSTOP,
-                       pad + 26, groupY + 18 + rowH + i * 20,
-                       W - 2 * pad - 38, 18, IDC_PLUGIN0 + i);
+        // Row-major: 0 and 1 share the top row, 2 and 3 the next. Filling one
+        // column and then the other would read better in a list that never
+        // scrolls, but here the two halves would slide past each other.
+        int col = i % LIST_COLS;
+        int row = i / LIST_COLS;
+
+        // BS_NOTIFY, or a button never sends BN_SETFOCUS at all and ListReveal
+        // is dead code - tab traversal would then park the focus on a row
+        // scrolled out of sight.
+        e->box = ChildPx(g_list, L"BUTTON", label,
+                         BS_AUTOCHECKBOX | BS_NOTIFY | WS_TABSTOP,
+                         col * colW, row * S(LIST_ROW), colW - S(6), S(18),
+                         IDC_PLUGIN0 + i);
         SendMessageW(e->box, BM_SETCHECK, e->on ? BST_CHECKED : BST_UNCHECKED, 0);
     }
     if (!g_plugCount)
-        Child(hwnd, L"STATIC", L"none found - is build\\plugins\\ there?", 0,
-              pad + 26, groupY + 18 + rowH, W - 2 * pad - 38, 18, 0);
+        ChildPx(g_list, L"STATIC", L"none found - is build\\plugins\\ there?", 0,
+                0, 0, lr.right, S(18), 0);
 
     SyncPluginBoxes();
 
+    // SS_NOPREFIX here too: the status line carries paths, and a folder with an
+    // & in its name would lose it.
     g_status = Child(hwnd, L"STATIC", gameFull[0] ? L"ready" : L"game not found - browse for it",
-                     SS_PATHELLIPSIS, pad, statusY, W - 2 * pad, 16, IDC_STATUS);
+                     SS_PATHELLIPSIS | SS_NOPREFIX, pad, statusY, W - 2 * pad, lineH, IDC_STATUS);
 
     Child(hwnd, L"BUTTON", L"Launch", BS_DEFPUSHBUTTON | WS_TABSTOP,
           W - pad - 2 * btnW - 6, btnY, btnW, btnH, IDC_LAUNCH);
@@ -1112,6 +1801,7 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
     wchar_t dll[MAX_PATH]  = {0};
     bool    gui            = true;
     bool    findOnly       = false;
+    bool    ignoreVersion  = false;
 
     for (int i = 1; argv && i < argc; i++)
     {
@@ -1119,13 +1809,16 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
         else if (!_wcsicmp(argv[i], L"--dll") && i + 1 < argc) wcscpy_s(dll, MAX_PATH, argv[++i]);
         else if (!_wcsicmp(argv[i], L"--nogui")) gui = false;
         else if (!_wcsicmp(argv[i], L"--find")) { findOnly = true; gui = false; }
+        else if (!_wcsicmp(argv[i], L"--ignore-version")) ignoreVersion = true;
         else if (!_wcsicmp(argv[i], L"--help"))
         {
             Msg(L"usage: tesmiolauncher [--game <SOVIET64.exe|folder>] "
-                L"[--dll <tesmioloader.dll>] [--nogui] [--find]");
+                L"[--dll <tesmioloader.dll>] [--nogui] [--find] [--ignore-version]");
             Msg(L"  no --game: the ini's game_exe, then a walk up from here, then Steam");
             Msg(L"  --nogui:   skip the window, launch with whatever is in the ini");
             Msg(L"  --find:    say what the search resolved and exit, changing nothing");
+            Msg(L"  --ignore-version: inject into a game that is not v" GAME_VER_TEXT
+                L". It will probably not work");
             if (!g_console) MessageBoxW(NULL, g_log, L"tesmiolauncher", MB_OK);
             return 0;
         }
@@ -1148,6 +1841,12 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
     ToParent(dllDir);
     SetIniPath(dllDir);
     ReadConfig();
+
+    // After ReadConfig, so the flag wins over the ini rather than the other way
+    // round - it is the more deliberate of the two.
+    if (ignoreVersion) g_versionCheck = false;
+    if (!g_versionCheck) Msg(L"version check off - any build will be injected into");
+
     ScanPlugins(dllDir);
 
     // --- the game, in order of how much the user meant it.
@@ -1189,7 +1888,7 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
         for (int i = 0; i < g_plugCount; i++)
         {
             wchar_t note[192];
-            PluginNote(&g_plug[i], note, _countof(note));
+            PluginNote(&g_plug[i], note, _countof(note), false);
             if (note[0])
                 Msg(L"plugin %-20s %-3s   [%s]", g_plug[i].file,
                     g_plug[i].on ? L"on" : L"off", note);
@@ -1197,7 +1896,14 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
                 Msg(L"plugin %-20s %s", g_plug[i].file,
                     g_plug[i].on ? L"on" : L"off");
         }
+        Msg(L"api    %u..%u", TSM_API_VERSION_MIN, TSM_API_VERSION);
         Msg(L"game   %s", found[0] ? found : L"NOT FOUND");
+
+        // Not "where" but "what", and the only line here that can veto the
+        // rest: --find exits 2 when the game it found would not be launched.
+        // GameVersionOf prints what it read; this says what was wanted.
+        Msg(L"needs  v" GAME_VER_TEXT L" (build %08X)", GAME_VER_STAMP);
+        if (found[0] && VersionRefuses(GameVersionOf(found))) return 2;
         return found[0] ? 0 : 1;
     }
 
@@ -1214,6 +1920,16 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
     {
         Msg(L"%s not found. Pass --game, or run without --nogui and browse for it.", GAME_EXE);
         return 1;
+    }
+
+    // The same gate the window applies, because --nogui is the same launch with
+    // nobody watching - a script that starts the game after an update must fail
+    // here rather than inject into a build none of the addresses fit.
+    if (VersionRefuses(GameVersionOf(found)))
+    {
+        Msg(L"this game is not v" GAME_VER_TEXT L" - refusing to inject. "
+            L"version_check = 0 in %s, or --ignore-version, overrides this.", g_ini);
+        return 2;
     }
 
     SaveConfig(found);

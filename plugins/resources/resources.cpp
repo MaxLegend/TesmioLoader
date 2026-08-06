@@ -13,11 +13,24 @@
 //   rva 0x2A92D0  the price pass. Walks the vector and writes every record's
 //                 price from the production chains. Bracketed, so [base_price]
 //                 lands before it and [price] after it.
+//   rva 0x185470  the customhouse's own tick, building type 20. Post-hooked so
+//                 an already-standing customhouse picks up a resource this
+//                 plugin declared after it was built - see CUSTOMS below.
 //
 // A new record is a clone of a template's, with its own name, caption id and
 // cargo meshes. Only the icon is found by name - every mesh path in the base
 // game is a literal, which is why AttachResourceMeshes makes the same three
 // engine calls the game's own resource table makes.
+//
+// CUSTOMS. A customhouse's trade storages are plain $STORAGE lines, one per
+// transport class, and the game builds that slot list exactly once - while
+// building.ini is parsed - by walking whatever this vector looks like at that
+// moment. A customhouse already standing (or built in an earlier session)
+// therefore freezes its trade list at whatever resources existed then: every
+// name [list] declares afterwards is otherwise perfectly tradeable - matching
+// transport class, a computed price, trucks that will deliver it - but has no
+// slot to be sold from. See the ExtendCustomsStorage block below, which reruns
+// that same walk against the live vector once per customhouse.
 //
 // Everything here is addresses for SOVIET64.exe v1.1.1.7. See
 // docs/04-adding-resources.md.
@@ -721,7 +734,28 @@ static void* LoadResourceMesh(const char* nmf, const char* mtl)
 
     // A mesh that failed to load is the same empty object, so the material is
     // only asked for once there is geometry to put it on.
-    if (!o_MeshLoadFromFile(mesh, nmf, mp, true)) return NULL;
+    //
+    // NOT A BOOL. Every resource with real files under media_soviet/resources
+    // reported "0 of N replaced" - drawn as the template - even though the
+    // .nmf is byte-identical to its donor's own (working) mesh and the VFS log
+    // showed every fopen for it succeeding through the redirect, twice per
+    // file, matching a full fopen/fseek/ftell/fread/fclose parse disassembled
+    // directly in C3DDLL64.dll at rva 0xA84C0. The mangled export settles it:
+    // `?LoadFromFile@C3D_MESH@@QEAA H PEBD PEAVC3D_MIDDLEPOINT@@ _N @Z` returns
+    // `H` - `int` - not `_N` - `bool`. The disassembly's only two return sites
+    // agree: the full-parse path ends in `xor eax,eax` (0 on success), and the
+    // one failure path found (`fopen` itself returning null) returns `eax=1`.
+    // So this is a C-style error code, zero meaning no error, and the original
+    // `if (!loaded)` had success and failure backwards - discarding every mesh
+    // that had in fact just finished loading, and falling back to the
+    // template's geometry silently, with no warning that would have looked
+    // like a bug rather than a missing asset.
+    int rc = o_MeshLoadFromFile(mesh, nmf, mp, true);
+    if (rc != 0)
+    {
+        Logf("resource  \"%s\": LoadFromFile error %d", nmf, rc);
+        return NULL;
+    }
     if (o_MeshLoadMaterial && mtl && AssetExists(mtl)) o_MeshLoadMaterial(mesh, mtl, 0);
     return mesh;
 }
@@ -1291,6 +1325,232 @@ static wchar_t* h_GetString(void* self, int id)
 
     return o_GetString(self, id);
 }
+
+// ---------------------------------------------------------------- customs
+//
+// A customhouse (media_soviet/buildings_types/zoll_*.ini, $TYPE_CUSTOMHOUSE)
+// declares its trade storages as plain $STORAGE lines, one per transport
+// class - confirmed against zoll_sahy.ini, whose $STORAGE lines name no
+// resource at all, unlike a shop's $STORAGE_DEMAND_* or a pharmacy's
+// $STORAGE_SPECIAL. That slot list is built once, while building.ini is
+// parsed - rva 0xE40F0, FUN_1400e40f0(parser, storage, class, capacity,
+// resource), documented in full in plugins/needs/needs.cpp - by walking
+// whatever this vector looks like at that moment. A customhouse already
+// standing on a map, or built in an earlier session, freezes its trade list
+// at whatever resources existed then: every name [list] above declares
+// afterwards is otherwise perfectly tradeable - matching transport class, a
+// computed price, trucks that will happily deliver it - but has no slot to be
+// sold from. Confirmed empirically before this was written: demolishing and
+// rebuilding an affected customhouse fixes it immediately.
+//
+// The fix reruns that same "does this storage have a slot for every resource
+// its class can carry" walk against the *live* resource vector, once per
+// customhouse, the first time each one ticks after this plugin loads. Every
+// structure offset below (B_STORAGES, ST_CLASS, ST_CAPACITY,
+// P_CUSTOMS_SLOT_PUSH_RVA, the two-parallel-vectors gotcha) is the one
+// plugins/needs/needs.cpp already found for a shop's storage; only the tick
+// address and the walk itself are new here.
+//
+//   rva 0x185470  FUN_140185470(game, building) - the type's own tick, and
+//                 the counterpart of the shop tick (rva 0x171DA0) needs.cpp
+//                 hooks for the same reason. Confirmed by disassembly rather
+//                 than taken on faith: the building-type dispatcher (rva
+//                 0x139A80) calls it only from
+//                 `cmp dword ptr [rax+0x360],0x14 / jne .. / call 0x185470`
+//                 at rva 0x13E30A - 0x14 is BUILDINGTYPE_CUSTOMHOUSE, and
+//                 `rax` there is `building+0x318`, the same type-descriptor
+//                 pointer TYPEDESC_OFF names in needs.cpp. The function also
+//                 spawns tourists on its own timer and tail-jumps into a
+//                 second, shared function afterwards; neither matters here -
+//                 a post-hook only needs it called once per customhouse per
+//                 tick, which the dispatcher already guarantees.
+#define P_CUSTOMHOUSE_TICK_RVA 0x185470
+
+static const BYTE kCustomsTickPrologue[] = {
+    0x48, 0x8B, 0xC4,                            // mov  rax,rsp
+    0x48, 0x89, 0x58, 0x18,                      // mov  [rax+0x18],rbx
+    0x56,                                        // push rsi
+    0x48, 0x81, 0xEC, 0x90, 0x00, 0x00, 0x00     // sub  rsp,0x90
+};
+
+#define P_CUSTOMS_SLOT_PUSH_RVA 0x0B14E0   // std::vector<Slot>::push_back, 16-byte value
+
+#define B_STORAGES         0x970      // building -> vector<Storage>, stride 0xE0
+#define STORAGE_STRIDE     0xE0
+#define ST_SLOTS2          0x18
+#define ST_CAPACITY        0x8C
+#define ST_CLASS           0x90
+#define SLOT_SIZE          0x10
+
+#define RES_CLASS_FACTOR   0xCC       // + class * 0x20
+#define RES_CLASS_BLOCKED  0xE8       // + class * 0x20
+#define RES_CLASS_STRIDE   0x20
+
+struct Slot { void* res; float content; float limit; };
+
+typedef void (*t_CustomsTick)(void*, void*);
+typedef void (*t_SlotPush)(void*, const void*);
+
+static t_CustomsTick o_CustomsTick;
+static t_SlotPush    o_CustomsSlotPush;
+
+static int   g_customsHook    = 1;
+static int   g_customsProbe   = 0;
+static DWORD g_customsTickRva = P_CUSTOMHOUSE_TICK_RVA;
+static LONG  g_customsSlotsAdded;
+
+static int CustomsSlotCount(BYTE* storage)
+{
+    ResVector* v = (ResVector*)storage;
+    if (!v->begin || v->end < v->begin) return -1;
+    return (int)((size_t)(v->end - v->begin) / SLOT_SIZE);
+}
+
+static int CustomsSlotIndexOf(BYTE* storage, const void* rec)
+{
+    ResVector* v = (ResVector*)storage;
+    if (!v->begin || v->end < v->begin) return -1;
+
+    size_t span = (size_t)(v->end - v->begin);
+    if (span % SLOT_SIZE) return -1;
+
+    for (size_t i = 0; i < span / SLOT_SIZE; i++)
+        if (((Slot*)(v->begin + i * SLOT_SIZE))->res == rec) return (int)i;
+    return -1;
+}
+
+// One trade storage. Walks the live resource vector and adds a slot for
+// every resource this storage's transport class can carry and does not
+// already have - which, on a customhouse built before that resource existed,
+// is every resource declared since. Reads through g_vecRva rather than a
+// second hard-coded vector address, so a `resource_vector_rva` override above
+// applies here too.
+static void ExtendCustomsStorage(BYTE* storage)
+{
+    int cls = *(int*)(storage + ST_CLASS);
+    if (cls < 0 || cls > 31) return;
+
+    float capacity = *(float*)(storage + ST_CAPACITY);
+    if (capacity <= 0.0f) return;
+
+    ResVector* rv = (ResVector*)(g_exeBase + g_vecRva);
+    if (!ReadablePtr(rv, sizeof(*rv)) || !rv->begin || rv->end < rv->begin) return;
+    size_t resCount = (size_t)(rv->end - rv->begin) / RES_STRIDE;
+
+    int slots = CustomsSlotCount(storage);
+    if (slots < 0) return;
+
+    // DO NOT CLONE AN EXISTING SLOT'S NUMBERS HERE - unlike a shop's slot,
+    // where `limit` is a stocking target unrelated to any one resource's
+    // identity, a customhouse's per-resource fields are its *trade*
+    // configuration: the script API exposes bImport/bExport on the storage
+    // itself (media_soviet/scripts/SOVIETInstructions.txt, struct Storage),
+    // which means the per-slot content/limit this plugin writes is what
+    // decides how much of *that* resource to move, at whatever direction the
+    // storage is already set to. An earlier version copied `limit` from
+    // whatever slot happened to be first in the storage - so a brand-new
+    // resource silently inherited an unrelated, already-configured resource's
+    // trade amount, and the customhouse began moving it - spending money on
+    // an import nobody asked for - before a single truck had ever arrived
+    // with it. A limit of zero is what an unconfigured resource in a real
+    // customhouse already looks like: present in the list, tradeable, and
+    // inert until the player sets a real amount from the trade panel, exactly
+    // as for any other resource there. Only the trade *amount* is left at
+    // zero, though - the resource identity in the parallel array below is not
+    // optional, see the save-crash note further down.
+    ResVector* v2 = (ResVector*)(storage + ST_SLOTS2);
+
+    for (size_t i = 0; i < resCount; i++)
+    {
+        BYTE* rec = rv->begin + i * RES_STRIDE;
+        if (!ReadablePtr(rec, RES_STRIDE)) continue;
+
+        size_t off     = (size_t)RES_CLASS_FACTOR + (size_t)cls * RES_CLASS_STRIDE;
+        float  factor  = *(float*)(rec + off);
+        char   blocked = *(char*)(rec + RES_CLASS_BLOCKED + (size_t)cls * RES_CLASS_STRIDE);
+        if (factor <= 0.0f || blocked) continue;
+
+        if (CustomsSlotIndexOf(storage, rec) >= 0) continue;   // already tradeable here
+
+        // The parallel array only grows when it still matches the slot
+        // count - anything else is a shape this was not written for, exactly
+        // the guard needs.cpp uses on the same pair of vectors.
+        bool sideOk = ReadablePtr(v2, sizeof(*v2)) && v2->end >= v2->begin &&
+                      (size_t)(v2->end - v2->begin) == (size_t)CustomsSlotCount(storage) * SLOT_SIZE;
+
+        // ST_SLOTS2 IS A SECOND vector<Slot>, NOT AN OPAQUE BLOB - confirmed by
+        // disassembling the customhouse's own save-serialiser, rva 0x1EC470: it
+        // walks *this* array (storage+0x18/+0x20, not the main one at +0x00),
+        // and for every 16-byte entry reads +0x00 as a resource pointer whose
+        // name it copies byte-by-byte into the save. A version that pushed an
+        // all-zero entry here - meant to stop a new resource inheriting a
+        // neighbour's trade amount, see the money fix below - left that pointer
+        // null, and crashed every save that touched an augmented customhouse
+        // the moment the save writer reached it (ACCESS_VIOLATION reading
+        // address 0 at that exact `mov al,[rcx]`). The fix is the same shape as
+        // the main slot with the same resource, not an empty one.
+        Slot s = { rec, 0.0f, 0.0f };     // never conjure stock, and never a trade amount
+
+        if (sideOk) o_CustomsSlotPush(storage + ST_SLOTS2, &s);
+        o_CustomsSlotPush(storage, &s);
+
+        g_customsSlotsAdded++;
+
+        if (g_customsProbe)
+        {
+            char nm[40] = "?";
+            SafeReadStr(rec, nm, sizeof(nm));
+            Logf("customs   storage %p class %d: added \"%s\" (class factor %.3f, "
+                 "starts untraded)", storage, cls, nm, factor);
+        }
+    }
+}
+
+// ------------------------------------------------- the customhouses that already exist
+
+#define MAX_CUSTOMHOUSES 64
+static void* g_customsSeen[MAX_CUSTOMHOUSES];
+
+static bool CustomsAlreadyDone(void* b)
+{
+    unsigned hash = (unsigned)((((size_t)b) >> 4) * 2654435761u);
+    int home = (int)(hash % MAX_CUSTOMHOUSES);
+
+    for (int n = 0; n < 16; n++)
+    {
+        int i = (home + n) % MAX_CUSTOMHOUSES;
+        if (g_customsSeen[i] == b) return true;
+        if (g_customsSeen[i] == NULL) { g_customsSeen[i] = b; return false; }
+    }
+    return false;   // table full - process again rather than skip forever
+}
+
+static void h_CustomsTick(void* game, void* building)
+{
+    o_CustomsTick(game, building);
+    if (!g_customsHook || !building) return;
+    if (CustomsAlreadyDone(building)) return;
+
+    __try
+    {
+        BYTE*      b        = (BYTE*)building;
+        ResVector* storages = (ResVector*)(b + B_STORAGES);
+        if (!ReadablePtr(storages, sizeof(*storages)) || !storages->begin) return;
+
+        size_t count = (size_t)(storages->end - storages->begin) / STORAGE_STRIDE;
+        for (size_t i = 0; i < count; i++)
+            ExtendCustomsStorage(storages->begin + i * STORAGE_STRIDE);
+
+        Logf("customs   customhouse %p synced (%ld slot(s) added so far, all customhouses)",
+             building, g_customsSlotsAdded);
+    }
+    __except (FaultFilter("customs storage", GetExceptionInformation()))
+    {
+        Logf("customs   disabled after a fault");
+        g_customsHook = 0;
+    }
+}
+
 // ---------------------------------------------------------------- the plugin
 
 // Published for anything that needs to know which index a mod resource ended up
@@ -1317,7 +1577,7 @@ extern "C" __declspec(dllexport) int TsmPluginInit(const TsmHost* host, TsmPlugi
 {
     TsmBind(host);
     info->name    = "resources";
-    info->version = "1.2";
+    info->version = "1.7";
 
     const char* ini = "plugins\\resources.ini";
     char v[64];
@@ -1343,6 +1603,11 @@ extern "C" __declspec(dllexport) int TsmPluginInit(const TsmHost* host, TsmPlugi
     g_priceReport = H->configInt(ini, "resources", "price_report", g_priceReport);
     if (H->configString(ini, "resources", "price_pass_rva", v, sizeof(v), "") && v[0])
         g_priceRva = (DWORD)strtoul(v, NULL, 0);
+
+    g_customsHook  = H->configInt(ini, "customs", "hook",  g_customsHook);
+    g_customsProbe = H->configInt(ini, "customs", "probe", g_customsProbe);
+    if (H->configString(ini, "customs", "customhouse_tick_rva", v, sizeof(v), "") && v[0])
+        g_customsTickRva = (DWORD)strtoul(v, NULL, 0);
 
     g_hRes = TsmOpenLog("tesmioloader.resources.log");
     const char* hdr = "; name                     which-arg  return value   discovering call site\r\n";
@@ -1392,6 +1657,30 @@ extern "C" __declspec(dllexport) int TsmPluginInit(const TsmHost* host, TsmPlugi
             Logf("price     WARN  no hook on the price pass - [base_price] and "
                  "[price] do nothing this session");
     }
+
+    // The customhouse tick. Post-hook: let the game run its own frame first,
+    // then top up whatever that customhouse's trade storages are still
+    // missing. Declining this hook only means an existing customhouse stays
+    // blind to a resource declared after it was built - new construction is
+    // unaffected, because 0xE40F0 already sees everything live at that point.
+    if (g_customsHook)
+    {
+        o_CustomsSlotPush = (t_SlotPush)(g_exeBase + P_CUSTOMS_SLOT_PUSH_RVA);
+
+        if (InstallInlineHook(g_exeBase + g_customsTickRva, (void*)h_CustomsTick,
+                              (void**)&o_CustomsTick, kCustomsTickPrologue,
+                              sizeof(kCustomsTickPrologue), "customhouse tick"))
+            Logf("customs   hooked - existing customhouses will pick up resources "
+                 "declared after they were built, the next time each one ticks");
+        else
+        {
+            g_customsHook = 0;
+            Logf("customs   no customhouse-tick hook - existing customhouses stay "
+                 "blind to resources added after they were built");
+        }
+    }
+    else
+        Logf("customs   hook = 0 - customhouses trade only what they were built with");
 
     Logf("resource  hook mode=%d rva=0x%lX, %d name(s) declared, array %s",
          g_resHook, g_resRva, g_regCount,
