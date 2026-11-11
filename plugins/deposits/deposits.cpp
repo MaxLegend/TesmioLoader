@@ -39,7 +39,7 @@
 // name resolve without either plugin knowing about the other - if `resources`
 // is installed its hook is on that address, and if it is not, the base game's
 // own lookup answers and a mod icon simply has no record.
-#define P_RESOURCEGET   0x2AA830   // v1.1.1.9; was 0x2AA7C0. Independent of
+#define P_RESOURCEGET   0x2AA7B0  // v1.1.1.13; was 0x2AA830. Independent of
                                    // plugins/resources' own copy of this same
                                    // address - see docs/02-findings.md
 typedef unsigned __int64 (*t_ResourceGet)(void*, void*, void*, void*);
@@ -502,15 +502,15 @@ static void ValidateDeposits()
 #define P_PARSER_SITE      0x10EAB8   // was 0x10EAC8. LEA RDX,[$TYPE_MINE_BAUXITE]
 #define P_PARSER_NEXT      0x10EAE8   // was 0x10EAF8. next token check
 #define P_PARSER_DONE      0x118805   // was 0x118815. shared exit
-#define P_STRCMP           0x84F520   // was 0x84F340
+#define P_STRCMP           0x84F6C0  // v1.1.1.13; was 0x84F520
 #define P_STR_BAUXITE      0x8895C0   // unchanged - .rdata string, not in the float pool
 #define P_PARSER_TOKEN     0x49A0     // [rbp+..] the token just read
 #define P_PARSER_BTYPE     0x1E10     // [rbp+..] building type
 #define P_PARSER_DTYPE     0x1E18     // [rbp+..] deposit type
 
-#define P_DISPATCH_SITE    0x1DD7E3   // was 0x1DD773. CMP [RSI+0x368],6
-#define P_DISPATCH_BODY6   0x1DD7EC   // was 0x1DD77C. body of the type 6 case
-#define P_DISPATCH_TAIL    0x1DD826   // was 0x1DD7B6. CMP [RSI+0x368],7
+#define P_DISPATCH_SITE    0x1DD763  // v1.1.1.13; was 0x1DD7E3. CMP [RSI+0x368],6
+#define P_DISPATCH_BODY6   0x1DD76C  // v1.1.1.13; was 0x1DD7EC. body of the type 6 case
+#define P_DISPATCH_TAIL    0x1DD7A6  // v1.1.1.13; was 0x1DD826. CMP [RSI+0x368],7
 #define P_GAMEOBJ          0x9941F0   // unchanged - .data does not move in this build
 #define P_SAMPLER          0x8360
 #define P_DEP_TYPE_FIELD   0x368      // building object, the deposit type
@@ -528,8 +528,8 @@ static void ValidateDeposits()
 //   1DCADA  C3                    RET
 //   1DCADB  0F 57 C0              XORPS XMM0,XMM0
 //   1DCADE  C3                    RET
-#define P_RADIUS_SITE      0x1DCB3D   // was 0x1DCACD
-#define P_RADIUS_WATERSURF 0x90AC20   // was 0x90AC38 - the constant the type 9 branch returns
+#define P_RADIUS_SITE      0x1DCABD  // v1.1.1.13; was 0x1DCB3D
+#define P_RADIUS_WATERSURF 0x90AC30  // v1.1.1.13; was 0x90AC20 - the constant the type 9 branch returns
 
 // The terrain's own material mask, and the two sites that bracket it.
 //
@@ -549,10 +549,10 @@ static void ValidateDeposits()
 // and 1DDE08 is the same five instructions with MaskTextureClose. Opening it
 // per sample point instead would be a GPU Map/Unmap per point - the mistake
 // docs/07-pitfalls.md already records - so both are patched, or neither.
-#define P_MASK_OPEN_SITE   0x1DD509   // was 0x1DD499
-#define P_MASK_OPEN_NEXT   0x1DD526   // was 0x1DD4B6 - where its JNZ lands
-#define P_MASK_CLOSE_SITE  0x1DDE78   // was 0x1DDE08
-#define P_MASK_CLOSE_NEXT  0x1DDE95   // was 0x1DDE25
+#define P_MASK_OPEN_SITE   0x1DD489  // v1.1.1.13; was 0x1DD509
+#define P_MASK_OPEN_NEXT   0x1DD4A6  // v1.1.1.13; was 0x1DD526 - where its JNZ lands
+#define P_MASK_CLOSE_SITE  0x1DDDF8  // v1.1.1.13; was 0x1DDE78
+#define P_MASK_CLOSE_NEXT  0x1DDE15  // v1.1.1.13; was 0x1DDE95
 #define P_MASK_OPEN_IAT    0x86CF38   // C3D_TERRAIN::MaskTextureOpen
 #define P_MASK_CLOSE_IAT   0x86CF30   // C3D_TERRAIN::MaskTextureClose
 #define P_TERRAIN_OFF      0xED8      // gameobj -> C3D_TERRAIN
@@ -584,10 +584,10 @@ static void ValidateDeposits()
 // Both sites are heads of their block and reached by fall-through only. The
 // cave puts our types in front of the displaced check, exactly as the mask
 // bracket does; the rejoin re-reads the type, so a clobbered EAX costs nothing.
-#define P_MAP_OPEN_SITE    0x1DD4C8   // was 0x1DD458
-#define P_MAP_OPEN_NEXT    0x1DD4E4   // was 0x1DD474 - the types 6-7 check, which re-reads EAX
-#define P_MAP_CLOSE_SITE   0x1DDE95   // was 0x1DDE25
-#define P_MAP_CLOSE_NEXT   0x1DDEB5   // was 0x1DDE45 - the types 6-7 close check
+#define P_MAP_OPEN_SITE    0x1DD448  // v1.1.1.13; was 0x1DD4C8
+#define P_MAP_OPEN_NEXT    0x1DD464  // v1.1.1.13; was 0x1DD4E4 - the types 6-7 check, which re-reads EAX
+#define P_MAP_CLOSE_SITE   0x1DDE15  // v1.1.1.13; was 0x1DDE95
+#define P_MAP_CLOSE_NEXT   0x1DDE35  // v1.1.1.13; was 0x1DDEB5 - the types 6-7 close check
 #define P_TEX_OPEN         0x80       // TextureAccessOpen,  vtable slot 16
 #define P_TEX_CLOSE        0x90       // TextureAccessClose, vtable slot 18
 
@@ -604,9 +604,9 @@ static const BYTE kMaskOrig[]     = { 0x83, 0xBE, 0x68, 0x03, 0x00, 0x00, 0x03 }
 // v1.1.1.9. Same reasoning as kParserOrig: the gameobj displacement is
 // recomputed from the new site even though P_GAMEOBJ (0x9941F0) is unchanged.
 static const BYTE kMapOpenOrig[]  = { 0x83, 0xF8, 0x02, 0x77, 0x17,
-                                      0x48, 0x8B, 0x05, 0x1C, 0x6D, 0x7B, 0x00 };
+                                      0x48, 0x8B, 0x05, 0x9C, 0x6D, 0x7B, 0x00 };
 static const BYTE kMapCloseOrig[] = { 0x83, 0xBE, 0x68, 0x03, 0x00, 0x00, 0x02, 0x77, 0x17,
-                                      0x48, 0x8B, 0x05, 0x4B, 0x63, 0x7B, 0x00 };
+                                      0x48, 0x8B, 0x05, 0xCB, 0x63, 0x7B, 0x00 };
 
 // ---------------------------------------------------------------- maps past the engine's two
 //
@@ -668,7 +668,7 @@ static const BYTE kMapCloseOrig[] = { 0x83, 0xBE, 0x68, 0x03, 0x00, 0x00, 0x02, 
 // The call site moved with everything around it; found again by its
 // address-independent `mov rdx,r15` immediately before the call.
 #define P_WORLD_SAVE_RVA   0x7C20     // FUN_140007c20(self, folder) - SaveToDDS x4
-#define P_WORLD_SAVE_CALL  0x42CDAE   // was 0x42CD0E - the only `call 0x7C20` in the executable
+#define P_WORLD_SAVE_CALL  0x42CD3E  // v1.1.1.13; was 0x42CDAE - the only `call 0x7C20` in the executable
 
 #define TEX_LOAD2D         2          // vtbl+0x10   Load2DFromFile(path,0,0,0,0)
 #define TEX_INIT_TEMP      19         // vtbl+0x98   TextureAccessInitTempResource
@@ -1528,8 +1528,8 @@ static bool PatchDepositType()
 // and the region outlines, so it sits on top of them where the base game's own
 // layers sit underneath.
 
-#define P_MINIMAP_DRAW_RVA 0x4BDE80   // was 0x4BDDE0. FUN_1404bdde0 - draws the coloured overlay
-#define P_MINIMAP_ROW_RVA  0x4BFF40   // was 0x4BFEA0. FUN_1404bfea0 - draws + handles the button row
+#define P_MINIMAP_DRAW_RVA 0x4BDE10  // v1.1.1.13; was 0x4BDE80. FUN_1404bdde0 - draws the coloured overlay
+#define P_MINIMAP_ROW_RVA  0x4BFED0  // v1.1.1.13; was 0x4BFF40. FUN_1404bfea0 - draws + handles the button row
 
 static const BYTE kMinimapDrawPrologue[] = {
     0x48, 0x8B, 0xC4,                                 // mov rax,rsp
@@ -1561,7 +1561,7 @@ static const BYTE kMinimapRowPrologue[] = {
 #define G_GAMEOBJ         0x9941F0   // +0xED8 terrain, +0xF08 resourcemap2
 #define G_PANEL           0x9BE060   // the one C3D_PANEL2D the whole minimap draws through
 #define G_TECHNIQUE       0x9EAD08   // current shader technique, set by the last BeginDraw
-#define G_PANEL_FULLSIZE  0x909F58   // was 0x909F70. w/h passed to every Draw() call in this UI
+#define G_PANEL_FULLSIZE  0x909F64  // v1.1.1.13; was 0x909F58. w/h passed to every Draw() call in this UI
 #define G_SLOT_BG_TEX     0x9DFF38   // background box texture, shared by every button
 #define G_SLOT_SEL_TEX    0x9E03E8   // "selected" badge texture, shared by every button
 #define G_CLICK_FLAG      0xA54E91   // nonzero for one frame on a real click
@@ -1570,19 +1570,19 @@ static const BYTE kMinimapRowPrologue[] = {
 #define G_RES_VECTOR      0x9E11C0   // the resource vector records live in: begin, end, capacity
 #define G_CLIP_HELPER_OBJ 0x9DFCC0   // passed to the per-icon clip-rect helper
 #define G_DPI             0x992088
-#define G_ROW_X0          0x90A988   // was 0x90A9A0
-#define G_ROW_STEP        0x90AA44   // was 0x90AA5C
-#define G_ROW_Y0          0x90AB18   // was 0x90AB30
-#define G_ICON_SCALE      0x909E54   // was 0x909E6C
+#define G_ROW_X0          0x90A998  // v1.1.1.13; was 0x90A988
+#define G_ROW_STEP        0x90AA54  // v1.1.1.13; was 0x90AA44
+#define G_ROW_Y0          0x90AB28  // v1.1.1.13; was 0x90AB18
+#define G_ICON_SCALE      0x909E5C  // v1.1.1.13; was 0x909E54
 #define G_HITBOX_HALF     0x90A6A8   // was 0x90A6C0
-#define G_BADGE_OFFSET    0x909CD8   // was 0x909CF0
+#define G_BADGE_OFFSET    0x909CE0  // v1.1.1.13; was 0x909CD8
 // 0.5f. The vanilla code loads this one constant for two unrelated jobs: the
 // inset of the overlay quad inside the minimap panel, and the size of the
 // "selected" badge. Both uses below read it from here.
-#define G_HALF            0x909DDC   // was 0x909DF4
-#define G_COLOR_IDLE      0x90C100   // was 0x90C120. float4 tint, not hovered
-#define G_COLOR_HOVER     0x90C4C0   // was 0x90C4E0. float4 tint, hovered
-#define G_COLOR_OVERLAY   0x90C2D0   // was 0x90C2F0. float4 (1,0,0,1) - the red every deposit layer is drawn in
+#define G_HALF            0x909DE4  // v1.1.1.13; was 0x909DDC
+#define G_COLOR_IDLE      0x90C110  // v1.1.1.13; was 0x90C100. float4 tint, not hovered
+#define G_COLOR_HOVER     0x90C4D0  // v1.1.1.13; was 0x90C4C0. float4 tint, hovered
+#define G_COLOR_OVERLAY   0x90C2E0  // v1.1.1.13; was 0x90C2D0. float4 (1,0,0,1) - the red every deposit layer is drawn in
 
 // The minimap's hover text, and it needed no unexported formatter after all.
 // Every vanilla layer does exactly this when its icon is hovered:
@@ -1604,7 +1604,7 @@ static const BYTE kMinimapRowPrologue[] = {
 #define G_PANEL_PAD       0x9BE2F8
 #define G_PANEL_SIZE      0x9BE2E8   // 2 floats: w,h of the next Draw()
 #define G_PANEL_COLOR     0x9BE30C   // 4 floats: tint of the next Draw()
-#define P_CLIP_HELPER     0x4461F0   // was 0x446150. FUN_140446150 - not exported, internal only
+#define P_CLIP_HELPER     0x446180  // v1.1.1.13; was 0x4461F0. FUN_140446150 - not exported, internal only
 
 #define G_TECH_GET_HANDLE 0x50       // technique vtbl+0x50  GetConstantHandle(name)->handle
 #define G_TECH_SET_VEC    0x68       // technique vtbl+0x68  SetVectorConstant(handle, float4*)
@@ -2116,14 +2116,14 @@ static void InstallMinimapPatch()
 // each was picked as the single unambiguous .pdata function start at the
 // local shift, and P_ED_TOOL_FIND's is additionally unchanged, sitting early
 // enough in .text that this update's growth all lands after it.
-#define P_ED_PANEL_RVA    0x233180   // was 0x233110. FUN_140233110 - draws the Resources tab
-#define P_ED_DISPATCH_RVA 0x30D1A0   // was 0x30D100. FUN_14030d100 - applies the active tool, every frame
-#define P_ED_CURSOR_RVA   0x2F0F10   // was 0x2F0E70. FUN_1402f0e70 - decides which tools get the round cursor
-#define P_ED_TEXELS_RVA   0x238B70   // was 0x238B00. FUN_140238b00 - the generic deposit texel writer
+#define P_ED_PANEL_RVA    0x233100  // v1.1.1.13; was 0x233180. FUN_140233110 - draws the Resources tab
+#define P_ED_DISPATCH_RVA 0x30D120  // v1.1.1.13; was 0x30D1A0. FUN_14030d100 - applies the active tool, every frame
+#define P_ED_CURSOR_RVA   0x2F0E90  // v1.1.1.13; was 0x2F0F10. FUN_1402f0e70 - decides which tools get the round cursor
+#define P_ED_TEXELS_RVA   0x238AF0  // v1.1.1.13; was 0x238B70. FUN_140238b00 - the generic deposit texel writer
 
 #define P_ED_TOOL_FIND    0x03AAA0   // unchanged. FUN_14003aaa0 - tool lookup by name
-#define P_ED_DRAW_BUTTON  0x382760   // was 0x3826C0. FUN_1403826c0 - draws one tool button
-#define P_ED_PAINT        0x235140   // was 0x2350D0. FUN_1402350d0 - one brush tick for one deposit
+#define P_ED_DRAW_BUTTON  0x3826A0  // v1.1.1.13; was 0x382760. FUN_1403826c0 - draws one tool button
+#define P_ED_PAINT        0x2350C0  // v1.1.1.13; was 0x235140. FUN_1402350d0 - one brush tick for one deposit
 
 // Editor object fields.
 #define ED_ACTIVE_TOOL    0xD428     // char* - the descriptor of the selected tool
@@ -2155,7 +2155,7 @@ static void InstallMinimapPatch()
 // 0x383BD0 before it returns, which is before an appended hook has drawn
 // anything, and our accumulator went nowhere. Calling the consumer ourselves,
 // once, after our own buttons, is the whole fix.
-#define P_ED_TOOLTIP      0x383C70   // was 0x383BD0. FUN_140383bd0(editorSelf, hoveredTool)
+#define P_ED_TOOLTIP      0x383BB0  // v1.1.1.13; was 0x383C70. FUN_140383bd0(editorSelf, hoveredTool)
 
 // Engine globals and vtable slots the icon needs.
 #define G_MIDDLEPOINT     0x9EACD0   // C3D_MIDDLEPOINT the button drawer creates textures through
@@ -2166,13 +2166,13 @@ static void InstallMinimapPatch()
 // v1.1.1.9; .rdata layout pool moved -0x18, each value confirmed at its new
 // address. Old addresses: 0x90AA40, 0x90AB2C, 0x90ADD0, 0x90AB14, 0x909EEC,
 // 0x90AB44, 0x90AB9C respectively.
-#define G_ED_X_A          0x90AA28   // 50
-#define G_ED_X_B          0x90AB14   // 85
-#define G_ED_Y_BASE       0x90ADB8   // 250
-#define G_ED_Y_CAPTION    0x90AAFC   // 80
+#define G_ED_X_A          0x90AA38  // v1.1.1.13; was 0x90AA28.  50
+#define G_ED_X_B          0x90AB24  // v1.1.1.13; was 0x90AB14.  85
+#define G_ED_Y_BASE       0x90ADC8  // v1.1.1.13; was 0x90ADB8.  250
+#define G_ED_Y_CAPTION    0x90AB0C  // v1.1.1.13; was 0x90AAFC.  80
 #define G_ED_BUTTON       0x909ED4   // 0.85, the size argument every button is drawn with
-#define G_ED_ROW_STEP     0x90AB2C   // 90, paint row to erase row
-#define G_ED_COL_STEP     0x90AB84   // 105, resource to resource
+#define G_ED_ROW_STEP     0x90AB3C  // v1.1.1.13; was 0x90AB2C.  90, paint row to erase row
+#define G_ED_COL_STEP     0x90AB94  // v1.1.1.13; was 0x90AB84.  105, resource to resource
 
 #define ED_IDX_BAUXITE    4          // 0x2350D0's index, not the channel
 #define ED_CH_BAUXITE     6          // what that index becomes by the time it reaches 0x238B00
@@ -2193,18 +2193,18 @@ static void InstallMinimapPatch()
 // Two functions, one constant apart, and the channel encoding is the deposit
 // brush's: channel = (component + 1) & 3. So rock paints component 2, which is
 // exactly the component gravel is mined from.
-#define P_ED_ROCKS_PANEL  0x22EEA0   // was 0x22EE30. FUN_14022ee30 - draws the Rocks tab
-#define P_ED_PAINT_ROCK   0x235370   // was 0x235300. FUN_140235300 - one rock brush tick
+#define P_ED_ROCKS_PANEL  0x22EE20  // v1.1.1.13; was 0x22EEA0. FUN_14022ee30 - draws the Rocks tab
+#define P_ED_PAINT_ROCK   0x2352F0  // v1.1.1.13; was 0x235370. FUN_140235300 - one rock brush tick
 #define ED_CH_ROCK        3          // the EditMask channel that call passes
 
 // Rocks-tab layout, all read from the game for the same reason the Resources
 // tab's are. x = DPI*(50 + 85), y = DPI*(250 + 80), one button 0.85 wide, and
 // 85 apart across; the mod row sits one 90-step below the vanilla one.
 // v1.1.1.9; same -0x18 pool as the Resources tab above.
-#define G_ED_ROCK_X_A     0x90AA28   // 50
-#define G_ED_ROCK_X_B     0x90AB14   // 85 - and the step between buttons
-#define G_ED_ROCK_Y_BASE  0x90ADB8   // 250
-#define G_ED_ROCK_Y_CAP   0x90AAFC   // 80
+#define G_ED_ROCK_X_A     0x90AA38  // v1.1.1.13; was 0x90AA28.  50
+#define G_ED_ROCK_X_B     0x90AB24  // v1.1.1.13; was 0x90AB14.  85 - and the step between buttons
+#define G_ED_ROCK_Y_BASE  0x90ADC8  // v1.1.1.13; was 0x90ADB8.  250
+#define G_ED_ROCK_Y_CAP   0x90AB0C  // v1.1.1.13; was 0x90AAFC.  80
 
 static const BYTE kEdPanelPrologue[] = {
     0x48, 0x8B, 0xC4,                                  // mov rax,rsp
@@ -2679,7 +2679,7 @@ static void h_ED_Cursor(void* self)
 #define P_ED_TERRAIN_RVA  0xAEE0     // unchanged in v1.1.1.9. FUN_14000aee0 - contour lines and the resource overlay
 #define G_OVL_FLAGS       0x23       // gameobj, six bytes, one per paintable channel
 #define G_OVL_COUNT       6
-#define G_OVL_VEC_C2      0x90BDD0   // was 0x90BDF0 - the float4 the +0x23 branch passes: (0,0,1,0).
+#define G_OVL_VEC_C2      0x90BDE0  // v1.1.1.13; was 0x90BDD0 - the float4 the +0x23 branch passes: (0,0,1,0).
                                      // A further .rdata cluster, confirmed at -0x20 rather than
                                      // the -0x18 above - see G_COLOR_OVERLAY
 

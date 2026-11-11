@@ -134,16 +134,16 @@
 // docs/02-findings.md has the derivation. P_FIND_CITY/P_REASSIGN/P_CITY_WINDOW
 // are re-verified by their prologue at load; P_RENUMBER/P_VEC_PUSH/P_SLIDER/
 // P_CHECKBOX are not - see the note by BindImports.
-#define P_FIND_CITY          0x330690  // was 0x3305F0. NamePoint* (Game*, const Vec3*, bool create)
-#define P_REASSIGN           0x32FF40  // was 0x32FEA0. void (Game*, const Vec3*)
-#define P_RENUMBER           0x3303B0  // was 0x330310. void (ignored, NamePoint*) - house numbers
+#define P_FIND_CITY          0x330610  // v1.1.1.13; was 0x330690. NamePoint* (Game*, const Vec3*, bool create)
+#define P_REASSIGN           0x32FEC0  // v1.1.1.13; was 0x32FF40. void (Game*, const Vec3*)
+#define P_RENUMBER           0x330330  // v1.1.1.13; was 0x3303B0. void (ignored, NamePoint*) - house numbers
 #define P_VEC_PUSH           0xB0E90   // unchanged. void (vector<T*>*, T** value) - push_back
-#define P_CITY_WINDOW        0x7CEF60  // was 0x7CEDB0. void (Game*, Window*, int captionId)
-#define P_SAVE_CITIES        0x3334E0  // was 0x333440. void (Game*, FILE*)
-#define P_LOAD_CITIES        0x333870  // was 0x3337D0. void (Game*, FILE*)
-#define P_SAVE_CALL          0x42DC35  // was 0x42DB95. the one `call 0x3334E0`
-#define P_LOAD_CALL          0x431DF6  // was 0x431D56. the one `call 0x333870`
-#define P_SLIDER             0x2727F0  // was 0x272780. the 0..100 slider with - and + buttons
+#define P_CITY_WINDOW        0x7CF100  // v1.1.1.13; was 0x7CEF60. void (Game*, Window*, int captionId)
+#define P_SAVE_CITIES        0x333460  // v1.1.1.13; was 0x3334E0. void (Game*, FILE*)
+#define P_LOAD_CITIES        0x3337F0  // v1.1.1.13; was 0x333870. void (Game*, FILE*)
+#define P_SAVE_CALL          0x42DBC5  // v1.1.1.13; was 0x42DC35. the one `call 0x3334E0`
+#define P_LOAD_CALL          0x431D86  // v1.1.1.13; was 0x431DF6. the one `call 0x333870`
+#define P_SLIDER             0x272770  // v1.1.1.13; was 0x2727F0. the 0..100 slider with - and + buttons
 // The checkbox the city window itself uses for "Allow citizens to move into
 // this city", one row above ours. It takes its **label as a string** rather
 // than a text id, so it needs no language entry, and - the reason it is used
@@ -157,9 +157,9 @@
 // dispatcher clears `window+0x20` whenever it is set (`0x6EA214`), so anything
 // that claims it makes 0x273AF0 inert for the rest of the frame. 0x273AF0 also
 // **consumes** the latch, which the labelled one leaves alone.
-#define P_CHECKBOX           0x3956F0  // was 0x395650
-#define P_WORLD_LOAD         0x430FC0  // was 0x430F20. void (…) - the whole world load
-#define P_WORLD_LOAD_CALL    0x29436B  // was 0x2942FB. the one `call 0x430FC0`
+#define P_CHECKBOX           0x395630  // v1.1.1.13; was 0x3956F0
+#define P_WORLD_LOAD         0x430F50  // v1.1.1.13; was 0x430FC0. void (…) - the whole world load
+#define P_WORLD_LOAD_CALL    0x2942EB  // v1.1.1.13; was 0x29436B. the one `call 0x430FC0`
 #define P_MOUSE_DOWN         0xA54E90  // non-zero while the left button is held (a .data
                                        // global - v1.1.1.9 did not move .data at all)
 
@@ -167,11 +167,11 @@
 // that load the 1000 m box the delete checks pre-filter with. 0x32FEA0's own
 // copy is not in the list: that whole function is replaced. v1.1.1.9 rvas;
 // old values noted per line.
-#define RVA_LIMIT_SITE       0x3306F8  // was 0x330658
-#define RVA_LIMIT_CONST      0x90B1FC  // was 0x90B214. 1e6 = 1000 m squared
-#define RVA_BOX_DELETE       0x32F61D  // was 0x32F57D. in DeleteCity
-#define RVA_BOX_CANDELETE    0x32F902  // was 0x32F862. in CanDeleteCity
-#define RVA_BOX_CONST        0x90B07C  // was 0x90B094. 1000
+#define RVA_LIMIT_SITE       0x330678  // v1.1.1.13; was 0x3306F8
+#define RVA_LIMIT_CONST      0x90B208  // v1.1.1.13; was 0x90B1FC. 1e6 = 1000 m squared
+#define RVA_BOX_DELETE       0x32F59D  // v1.1.1.13; was 0x32F61D. in DeleteCity
+#define RVA_BOX_CANDELETE    0x32F882  // v1.1.1.13; was 0x32F902. in CanDeleteCity
+#define RVA_BOX_CONST        0x90B08C  // v1.1.1.13; was 0x90B07C. 1000
 
 #define VANILLA_LIMIT_SQ     1000000.0f
 #define VANILLA_BOX          1000.0f
@@ -199,11 +199,11 @@
 // and the 50 m step twice - the step has to follow the radius or a 5 km city
 // walks 200x200 points, each running the search over every city on the map.
 // v1.1.1.9 rvas; old values noted per line.
-#define RVA_OVL_R_START      0x3123C1  // was 0x312321. movss xmm11,[0x90B07C]
-#define RVA_OVL_RSQ          0x31267C  // was 0x3125DC. movss xmm11,[0x90B1FC]
-#define RVA_OVL_STEP_Z       0x3127B1  // was 0x312711. addss xmm6 ,[0x90AA28]
-#define RVA_OVL_STEP_X       0x3127D0  // was 0x312730. addss xmm8 ,[0x90AA28]
-#define RVA_OVL_STEP_CONST   0x90AA28  // was 0x90AA40. 50
+#define RVA_OVL_R_START      0x312341  // v1.1.1.13; was 0x3123C1. movss xmm11,[0x90B07C]
+#define RVA_OVL_RSQ          0x3125FC  // v1.1.1.13; was 0x31267C. movss xmm11,[0x90B1FC]
+#define RVA_OVL_STEP_Z       0x312731  // v1.1.1.13; was 0x3127B1. addss xmm6 ,[0x90AA28]
+#define RVA_OVL_STEP_X       0x312750  // v1.1.1.13; was 0x3127D0. addss xmm8 ,[0x90AA28]
+#define RVA_OVL_STEP_CONST   0x90AA38  // v1.1.1.13; was 0x90AA28. 50
 #define VANILLA_OVL_STEP     50.0f
 
 // The x loop's END bound is the one that could not be repointed, and it is
@@ -227,7 +227,7 @@
 // five-metre slack goes with it, which is invisible against a fifty-metre grid.
 // xmm11 and the two step reads have no such downstream reader - checked the
 // same way - which is why those three are ordinary repoints.
-#define RVA_OVL_END_CMP      0x3127EA  // was 0x31274A
+#define RVA_OVL_END_CMP      0x31276A  // v1.1.1.13; was 0x3127EA
 static const BYTE kOvlEndCmp[] = {
     0xF3, 0x41, 0x0F, 0x58, 0xC1,       // addss  xmm0,xmm9
     0xF3, 0x41, 0x0F, 0x58, 0xC5,       // addss  xmm0,xmm13
@@ -256,10 +256,10 @@ static const BYTE kOvlEndCmp[] = {
 #define P_FONTMGR            0x996FB0  // C3D_FONTMANAGER, by address
 #define P_ROW_FONT           0x994200  // the C3D_FONT* the city window's rows use
 // v1.1.1.9; .rdata moved by a uniform -0x18, each value confirmed still there.
-#define LAYOUT_15            0x90A8CC  // was 0x90A8E4. 15
-#define LAYOUT_20            0x90A928  // was 0x90A940. 20 - a checkbox
-#define LAYOUT_25            0x90A968  // was 0x90A980. 25 - how far 0x395650 draws ABOVE its y
-#define LAYOUT_35            0x90A9CC  // was 0x90A9E4. 35 - one row
+#define LAYOUT_15            0x90A8DC  // v1.1.1.13; was 0x90A8CC. 15
+#define LAYOUT_20            0x90A938  // v1.1.1.13; was 0x90A928. 20 - a checkbox
+#define LAYOUT_25            0x90A978  // v1.1.1.13; was 0x90A968. 25 - how far 0x395650 draws ABOVE its y
+#define LAYOUT_35            0x90A9DC  // v1.1.1.13; was 0x90A9CC. 35 - one row
 #define ROW_COLOUR           0xFF990000u
 #define P_WIDGET_BUSY        0xAD74    // game -> the widget being edited, or -1
 #define P_CLICK_LATCH        0xA54E91  // a click nobody has consumed yet
@@ -1296,7 +1296,7 @@ static void ReadSettings(void)
 // own `lea rcx,[gameobj]` two instructions before it asks FindCity for a
 // city-less building's city. If that no longer resolves to P_GAMEOBJ, nothing
 // below is safe to run.
-#define RVA_GAMEOBJ_LEA 0x43970A   // v1.1.1.9; was 0x43966A
+#define RVA_GAMEOBJ_LEA 0x43969A  // v1.1.1.13; was 0x43970A
 
 static bool VerifyGameObject(void)
 {

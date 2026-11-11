@@ -124,7 +124,7 @@
 
 // The build of the game this project is written against. Every hard-coded rva
 // in the loader and in every plugin belongs to it and was re-derived for it in
-// b0.3.6; docs/02-findings.md describes it.
+// b0.3.7; docs/02-findings.md describes it.
 //
 // A table rather than one constant, because the port off v1.1.1.7 proved the
 // shape is worth keeping: adding a build is one row plus a pass of the address
@@ -150,7 +150,10 @@ struct SupportedGameVersion
 };
 
 static const SupportedGameVersion kSupportedVersions[] = {
-    { { 1, 1, 1, 9 }, 0x6A3EB6ADu, L"1.1.1.9" },  // 2026-06-26 17:28:13 UTC
+    // v1.1.1.13; was { 1, 1, 1, 9 }, 0x6A3EB6ADu (2026-06-26 17:28:13 UTC).
+    // The 2026-11-11 update; every hard-coded address in the tree was
+    // re-derived against it - see docs/17-port-v1.1.1.9.md, *The port*.
+    { { 1, 1, 1, 13 }, 0x6A8D4087u, L"1.1.1.13" },  // 2026-08-25 07:13:11 UTC
 };
 #define GAME_VER_COUNT (sizeof(kSupportedVersions) / sizeof(kSupportedVersions[0]))
 

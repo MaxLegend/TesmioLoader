@@ -2,6 +2,11 @@
 
 ---
 
+*Update! - v. b0.3.7*
+The game's regular branch updated to v1.1.1.13. Measured against a byte copy of the old build: `.text` grew by only 0x1A0 but reflowed in the usual steps (0, -0x80, -0x70, +0x1A0 - most of the update's changes landed *before* the loader's sites, moving them down), the `.rdata` constant pool moved forward for once (+0x8/+0x10 in two clusters), `.data` did not move a single byte, and C3DDLL64.dll changed only 34 bytes of timestamps - the engine is untouched. Every hard-coded address across all nine active plugins and the four address keys in `resources.ini` has been re-derived against the new build and verified: 34 of the 36 install-time byte checks carried over unchanged, two (`kMapOpenOrig`/`kMapCloseOrig`) carry a displacement that moved with their site. v1.1.1.9 is no longer supported. A full record of what the update moved - including the day-length note from b0.3.6's port, which turned out to be a misread of a neighbouring pool constant - is in docs/17-port-v1.1.1.9.md.
+
+---
+
 *Update! - v. b0.3.6*
 The game's regular branch updated to v1.1.1.9 - the update notes said content only, but the executable itself had in fact reflowed throughout: `.text` grew in steps of up to nearly 500 bytes depending how far into it a given address sat, and the `.rdata` constant pool shifted in two separate clusters. Every hard-coded address across all nine active plugins has been re-derived and re-verified byte for byte against the new build; v1.1.1.7 is no longer supported, and none of its addresses remain in the source.
 The first launch on the new build crashed: `resources` was installing an import hook before its main hook, and when the main one refused (address moved), the loader freed the plugin with the import hook still pointing into it. Fixed - the import hook now installs only after the main one is confirmed.

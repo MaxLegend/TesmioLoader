@@ -1176,3 +1176,40 @@ Before scaling a shared resource, enumerate what else reads it, not just what
 you intended to fix - `python scan.py ref <address>` finding 337 call sites for
 one timer was exactly the information that should have prompted asking "what
 are all of these," not just "does the economy come out right."
+
+## A building type lives on its type descriptor, not on the building
+
+`easystart`'s one-time catch-up sweep (`SweepExistingBuildings`, 1.1) read a
+live building's type with `*(int*)(building + 0x360)` and compared it against
+`BUILDINGTYPE_LIVING` (2) to decide whether to clear a pre-existing building's
+power/water warning counters immediately rather than waiting for its next
+tick. It never matched — the log said `sweep: 0 of 668 building(s) are living
+quarters` on every load, on two different sessions, which is what made it
+look like a real property of the map rather than a bug: 668 buildings and not
+one of them a house is not plausible, but it reads exactly like a spurious
+mismatch would.
+
+`+0x360` is real, but it belongs to the building's *type descriptor*
+(`*(building + 0x318)`), not to the building object itself — `depletion.cpp`
+and `accumulator.cpp` already read it that way, both with a `typedesc ->
+building type` comment, and the vanilla planner's own disassembly confirms it:
+`mov rdx,[person+0x20]` (the building) / `mov r8,[rdx+0x318]` (its type
+descriptor) / `mov esi,[r8+0x360]` (the type, tested there against
+`BUILDINGTYPE_ORPHANAGE`/`BUILDINGTYPE_PRISON` for two special-cased blocks).
+Reading `+0x360` straight off the building reads whatever unrelated field
+happens to sit there in the *instance* layout — not zero, not garbage that
+faults, just a number that is never 2 — so the check fails silently every
+time, with no crash and no refusal to point at it.
+
+Fixed by going through the type descriptor first, in a small `BuildingTypeOf`
+helper both call sites now share. The practical effect is narrow — a
+pre-existing building's power/water warning lines now clear at world load
+instead of waiting for that building's own next `0x1BC210` tick, which
+happens anyway shortly after — so this was never the cause of a citizen's
+demand list itself being wrong, only of the sweep silently doing nothing.
+
+Lesson: **when a count comes back exactly zero against a population that
+obviously contains matches, suspect the field before the data** — especially
+when a sibling plugin already reads the same-looking offset correctly one
+indirection deeper, and the discrepancy was sitting in a `grep` away the whole
+time.

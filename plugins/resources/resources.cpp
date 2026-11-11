@@ -57,7 +57,7 @@
 // SOVIET64.exe v1.1.1.9. Verified against the prologue below before hooking, so
 // a game update makes the hook refuse to install rather than corrupt the process.
 // Was 0x2AA7C0 in v1.1.1.7; the prologue found it again 0x70 further on.
-#define DEFAULT_RESOURCEGET_RVA 0x2AA830
+#define DEFAULT_RESOURCEGET_RVA 0x2AA7B0   // v1.1.1.13; was 0x2AA830
 
 static const BYTE kResourceGetPrologue[] = {
     0x40, 0x55,                                     // push rbp
@@ -334,7 +334,7 @@ static bool g_warnedCapacity;
 // 0x2FBB95, each time followed by 0x2A9F40.
 // v1.1.1.9; was 0x2A92D0. Confirmed by what it reads rather than by the shift:
 // the function still walks the resource vector through self+0xC2B0/+0xC2B8.
-#define DEFAULT_PRICEPASS_RVA 0x2A9340
+#define DEFAULT_PRICEPASS_RVA 0x2A92C0   // v1.1.1.13; was 0x2A9340
 
 static const BYTE kPricePassPrologue[] = {
     0x48, 0x89, 0x6C, 0x24, 0x18,   // mov  [rsp+18h], rbp
@@ -2070,7 +2070,7 @@ static wchar_t* h_GetString(void* self, int id)
 //                 second, shared function afterwards; neither matters here -
 //                 a post-hook only needs it called once per customhouse per
 //                 tick, which the dispatcher already guarantees.
-#define P_CUSTOMHOUSE_TICK_RVA 0x1854E0   // v1.1.1.9; was 0x185470
+#define P_CUSTOMHOUSE_TICK_RVA 0x185500  // v1.1.1.13; was 0x1854E0
 
 static const BYTE kCustomsTickPrologue[] = {
     0x48, 0x8B, 0xC4,                            // mov  rax,rsp

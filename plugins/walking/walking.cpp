@@ -107,14 +107,14 @@ static const BYTE kWalkLimitOp[] = { 0xC7, 0x44, 0x24, 0x7C };
 // Everything else is `movss xmm0,[rip+disp32]`, and only the displacement is
 // rewritten - and only after the address it resolves to and the value in there
 // both check out. .rdata moved by a uniform -0x18 in this build.
-#define RVA_WALK_CONST   0x90AF20   // 480, as the queued builder and the overlay read it - was 0x90AF38
-#define RVA_CAR_CONST    0x90B104   // was 0x90B11C
+#define RVA_WALK_CONST   0x90AF30  // v1.1.1.13; was 0x90AF20.  480, as the queued builder and the overlay read it - was 0x90AF38
+#define RVA_CAR_CONST    0x90B110  // v1.1.1.13; was 0x90B104
 #define VANILLA_CAR      2500.0f
 
-#define RVA_WALK_RADIUS  0x90AF58   // was 0x90AF70
+#define RVA_WALK_RADIUS  0x90AF68  // v1.1.1.13; was 0x90AF58
 #define VANILLA_WALK_R   530.0f
 
-#define RVA_CAR_RADIUS   0x90B108   // was 0x90B120
+#define RVA_CAR_RADIUS   0x90B114  // v1.1.1.13; was 0x90B108
 #define VANILLA_CAR_R    2600.0f
 
 // The four values, and the slot each site points at.
@@ -140,10 +140,10 @@ struct Site
 // 0x12E7AF, 0x43F04A, 0x43F835, 0x12F926, 0x43FFB3, 0x12DEA7, 0x12F502.
 static const Site kSites[] = {
     { 0x12E79F, RVA_WALK_CONST,  VANILLA_WALK,   SLOT_WALK,   "walk build queued" },
-    { 0x43F0EA, RVA_WALK_CONST,  VANILLA_WALK,   SLOT_WALK,   "walk overlay"      },
-    { 0x43F8D5, RVA_WALK_CONST,  VANILLA_WALK,   SLOT_WALK,   "walk overlay 2"    },
+    { 0x43F07A, RVA_WALK_CONST,  VANILLA_WALK,   SLOT_WALK,   "walk overlay"      },
+    { 0x43F865, RVA_WALK_CONST,  VANILLA_WALK,   SLOT_WALK,   "walk overlay 2"    },
     { 0x12F916, RVA_CAR_CONST,   VANILLA_CAR,    SLOT_CAR,    "car build"         },
-    { 0x440053, RVA_CAR_CONST,   VANILLA_CAR,    SLOT_CAR,    "car overlay"       },
+    { 0x43FFE3, RVA_CAR_CONST,   VANILLA_CAR,    SLOT_CAR,    "car overlay"       },
     { 0x12DE97, RVA_WALK_RADIUS, VANILLA_WALK_R, SLOT_WALK_R, "walk rebuild"      },
     { 0x12F4F2, RVA_CAR_RADIUS,  VANILLA_CAR_R,  SLOT_CAR_R,  "car rebuild"       },
 };
@@ -151,8 +151,8 @@ static const Site kSites[] = {
 // The save loader's "this save predates the longer distances" test. v1.1.1.9;
 // was 0x438366/0x438373 - same shape, cmp+jge then a separate test al,al/jne,
 // both landing on the same target, confirmed by disassembly.
-#define RVA_REGEN_CMP    0x438406   // 83 3D <disp32> 6E   cmp dword[ver],110
-#define RVA_REGEN_TEST   0x438413   // 84 C0 0F 85 ...     test al,al / jnz
+#define RVA_REGEN_CMP    0x438396  // v1.1.1.13; was 0x438406.  83 3D <disp32> 6E   cmp dword[ver],110
+#define RVA_REGEN_TEST   0x4383A3  // v1.1.1.13; was 0x438413.  84 C0 0F 85 ...     test al,al / jnz
 #define RVA_SAVE_VERSION 0x9E9C3C
 
 static const BYTE kMovssRip[]  = { 0xF3, 0x0F, 0x10, 0x05 };

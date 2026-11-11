@@ -208,10 +208,14 @@ knowing before trusting an update's own description of itself:
   simulation timer, every static this project reads by absolute address —
   unchanged, confirmed by the `lea` sites that resolve them still landing on
   the same targets.
-- **A game constant changed value, not just address**: `daynight`'s day
-  length went from `60.0` to `63.0`. Genuinely content, and indistinguishable
-  from an address problem until checked — a stale `RVA_DAY_LENGTH` would have
-  refused to install with no other symptom.
+- **A pool neighbour can look like a value change**: the port first read the
+  day length as "went from `60.0` to `63.0`", and that was a misread — the
+  v1.1.1.9 day tick still compares against `60.0` at `0x90AA78` (`comiss` at
+  `0x334ABB`, right after its `PowerTime` call), while `63.0` sits unreferenced
+  0x18 higher at `0x90AA90`. Corrected 2026-11-11 against the byte backup in
+  `port/backup-v1.1.1.9/` (see docs/17-port-v1.1.1.9.md, *Errata*): the
+  lesson stands — tie-break a pool constant by the code that reads it, not
+  by the value alone.
 - **The method**: a prologue/pattern scanner over the byte arrays every hook
   already records as its expected prologue, filtered against the PE's own
   `.pdata` `RUNTIME_FUNCTION` table so a match had to be a genuine function
@@ -455,7 +459,7 @@ needs** — both its wiring and whatever content it declares:
 
 | File | Holds |
 |---|---|
-| `pluginsesources.ini` | the ResourceGet hook mode and the three RVAs it needs |
+| `plugins\resources.ini` | the ResourceGet hook mode and the three RVAs it needs |
 | `plugins\deposits.ini` | which of the three deposit subsystems may touch the game |
 | `plugins\depletion.ini` | whether deposits run out, and how fast |
 | `plugins\accumulator.ini` | what counts as a battery, and how fast it charges |

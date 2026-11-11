@@ -70,9 +70,9 @@
 
 // ---------------------------------------------------------------- the game
 
-#define P_PERSON_PLAN_RVA   0x836B40   // v1.1.1.9; was 0x836960
+#define P_PERSON_PLAN_RVA   0x836CE0  // v1.1.1.13; was 0x836B40
 #define P_STORAGE_BUILD_RVA 0x0E40F0   // FUN_1400e40f0(parser, storage, class, cap, res)
-#define P_SHOP_TICK_RVA     0x171E10   // v1.1.1.9; was 0x171DA0. Building type 3
+#define P_SHOP_TICK_RVA     0x171E30  // v1.1.1.13; was 0x171E10. Building type 3
 #define P_TYPE_LOAD_RVA     0x11D800   // v1.1.1.9; was 0x11D810 - one of the few
                                        // sites that moved DOWN, see docs/02-findings.md
 #define P_BUILDING_TYPES    0x9E6A30   // the vector<TYPE> that function fills

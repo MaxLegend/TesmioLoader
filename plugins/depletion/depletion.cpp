@@ -75,8 +75,8 @@ static const TsmDepositApi* D;
 
 // ---------------------------------------------------------------- the game
 
-#define P_MINE_TICK_RVA   0x1B3700   // v1.1.1.9; was 0x1B3690. One mine, one tick
-#define P_DEPOSIT_RADIUS  0x1DCAE0   // v1.1.1.9; was 0x1DCA70. FUN_1401dca70 -
+#define P_MINE_TICK_RVA   0x1B3680  // v1.1.1.13; was 0x1B3700. One mine, one tick
+#define P_DEPOSIT_RADIUS  0x1DCA60  // v1.1.1.13; was 0x1DCAE0. FUN_1401dca70 -
                                      // deposit type -> search radius. A leaf
                                      // function with no .pdata entry of its own -
                                      // confirmed by disassembly: the previous
@@ -87,8 +87,8 @@ static const TsmDepositApi* D;
 #define P_TIMER_OBJ       0x9D4EE0   // the C3D_TIMER the whole simulation steps on
 // The .rdata literal pool moved by a uniform -0x18 in v1.1.1.9 - every constant
 // below was confirmed by its VALUE at the new address, not by the offset.
-#define P_TIMER_STEP      0x909AFC   // 0.001f, the argument every PowerTime call passes
-#define P_PROD_PERIOD     0x90AA78   // 60.0f, what the rate is divided by per tick
+#define P_TIMER_STEP      0x909B04  // v1.1.1.13; was 0x909AFC.  0.001f, the argument every PowerTime call passes
+#define P_PROD_PERIOD     0x90AA88  // v1.1.1.13; was 0x90AA78.  60.0f, what the rate is divided by per tick
 
 #define P_MAP1_OFF        0xF00      // gameobj -> resourcemap
 #define P_MAP2_OFF        0xF08      // gameobj -> resourcemap2
@@ -133,13 +133,13 @@ static const TsmDepositApi* D;
 // so a post-hook can read where the game stopped, draw one more row there, and
 // write the new bottom back - which is what makes the window grow by exactly
 // one line instead of the text landing on the frame.
-#define P_MINE_PANEL_RVA  0x786BE0   // v1.1.1.9; was 0x786AC0
+#define P_MINE_PANEL_RVA  0x786D80  // v1.1.1.13; was 0x786BE0
 #define P_FONTMANAGER     0x996FB0   // C3D_FONTMANAGER, by address
 #define P_PANEL_FONT      0x995220   // the C3D_FONT* the panel's rows use
 #define P_DPI             0x992088   // the scale every layout constant is multiplied by
-#define P_ROW_STEP        0x90A9CC   // 35 - one row, and the x indent as well
-#define P_X_BACK          0x90A8CC   // 15
-#define P_X_INDENT        0x90AB98   // 110
+#define P_ROW_STEP        0x90A9DC  // v1.1.1.13; was 0x90A9CC.  35 - one row, and the x indent as well
+#define P_X_BACK          0x90A8DC  // v1.1.1.13; was 0x90A8CC.  15
+#define P_X_INDENT        0x90ABA8  // v1.1.1.13; was 0x90AB98.  110
 #define W_BUILDING        0x240      // window -> the building it is about
 #define W_BOTTOM          0x250      // window -> the running Y, written at the end
 #define W_HIDDEN          0x01       // non-zero while the panel is not drawn

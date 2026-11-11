@@ -136,6 +136,19 @@ Two are deliberately never written:
 `food`'s status is satiety, so pinning it means nobody starves while food is
 locked — which is exactly what the grace year is for.
 
+**Alcohol is the one status that runs backwards, and 1.1 pinned it wrong.**
+Every other status in the array reads "how content is this citizen with X" —
+1.0 is the goal, and pinning it there is what keeps a locked need from feeling
+punishing on the day it unlocks. `fStatusAlcohol` instead reads "how much has
+this citizen been drinking", and it feeds the *health* ledger's own "Drinking
+alcohol" reason directly (health reason list, above) — the same kind of entry
+as *Starving* or *Pollution*. Pinning it to `locked_status` (1.0 by default)
+told the health system every citizen was drinking at capacity for as long as
+alcohol stayed locked: not a benign default, but a permanent, republic-wide
+health penalty for a need that was supposed to not exist yet. 1.2 pins it to
+0 unconditionally, ignoring `locked_status` — the one status where zero, not
+the configured level, is what "does not exist yet" means.
+
 ### The nagging message
 
 `person+0x4F0` is the unsatisfied-demand list the planner fills from whatever the
@@ -292,7 +305,7 @@ the field `plugins/aging` was written to go looking for.
 | `utilities` | 1 | electricity, water, heating |
 | `warnings` | 1 | the three lines the building's own window prints |
 | `pin_status` | 1 | hold a locked need's status float |
-| `locked_status` | 1.0 | at what level |
+| `locked_status` | 1.0 | at what level (alcohol ignores this and is always held at 0 — see above) |
 | `clear_unsatisfied` | 1 | drop locked needs out of `person+0x4F0` too |
 | `probe` | 0 | a line per year change, plus one full citizen dump |
 
@@ -325,11 +338,44 @@ starts early — the Early Start content, or a date wound back by other means.
 **One thing here is confirmed in game and the rest is not.** Version 1.0 was
 watched in a 1920s save: every locked need's status bar read 100 %, health read
 85 % and happiness 73 % — the plugin's exact fingerprint, since those two are
-deliberately never pinned. What that session also showed is what 1.1 is for: the
-building's own window still printed *Building is without power supply*,
-*56 Citizen(s) currently without power*, *56 Citizen(s) are currently without
-drinking water*, *13 Children can't go to school* and *8 Workers can't work
-because all kindergartens…*. **None of the 1.1 work has been watched at all.**
+deliberately never pinned. Alcohol's bar reading 100 % in that same session
+*was* the bug 1.2 fixes: for every other need 100 % is the correct pinned
+value, but for alcohol it meant the health ledger was crediting every citizen
+with drinking at capacity the whole time it was locked. What that session also
+showed is what 1.1 is for: the building's own window still printed *Building
+is without power supply*, *56 Citizen(s) currently without power*,
+*56 Citizen(s) are currently without drinking water*, *13 Children can't go to
+school* and *8 Workers can't work because all kindergartens…*.
+
+**Two things from 1.1/1.2 are now confirmed, from a `probe` session that ran a
+map from 1920 across the 1921 food-unlock boundary:**
+
+- **`SweepExistingBuildings`'s building-type check was reading the wrong
+  struct**, and is fixed. It compared `*(int*)(building + 0x360)` against
+  `BUILDINGTYPE_LIVING`, and that field lives on the building's *type
+  descriptor* (`*(building + 0x318)`), not on the building itself — the same
+  offset `depletion.cpp` and `accumulator.cpp` already read correctly, one
+  indirection deeper. The tell was `sweep: 0 of 668 building(s) are living
+  quarters` on two separate sessions — impossible on a populated map if the
+  check were right. After the fix the same map reads `571 of 670`. See
+  [07-pitfalls.md](07-pitfalls.md), *A building type lives on its type
+  descriptor, not on the building*. This only ever affected the one-time
+  catch-up for a living building's power/water warning lines, never a
+  citizen's demand list — building type has nothing to do with `easystart`'s
+  own gating, which reads year and locked-need state only.
+- **A pre-existing citizen does eventually get a real vanilla food demand**,
+  confirmed by name rather than inferred: `[0]kind1/need0` (and once, at the
+  same moment, `kind1/need1` meat and `kind1/need3` electronics alongside it)
+  showed up for two of the ten watched citizens, each right as their own
+  `fStatusFood` moved off its pinned `1.0` for the first time in the session
+  (`raw bits 3F800000` → `3F79BB18`). Two shorter sessions before this one,
+  each watching the same ten citizens for under a minute past the unlock
+  year, caught zero — not because food was gated, but because the planner
+  that actually appends a food demand (`0x836B40`) runs on a per-citizen
+  "ready to decide" cadence, not every tick the way the evaluator does, and
+  ten citizens out of six-plus-thousand is a thin sample for a short window.
+  **Not yet watched: the happiness panel itself**, which is the test that
+  does not depend on which ten citizens happened to get sampled.
 
 1. Tick `easystart` in the launcher. Set `probe = 1`. Load a save whose year is
    **before** some of the unlock years — winding the date back is the whole
@@ -366,15 +412,23 @@ because all kindergartens…*. **None of the 1.1 work has been watched at all.**
    "Unable to enjoy culture" while `culture` is locked means the bracket is not
    taking effect; a non-zero "No water" while `water` is locked means a rate was
    refused or the slot is not being written.
-6. Watch a citizen use a service that is built but locked — a pub in 1925. They
+8. **The alcohol fix, specifically** — with `probe = 1`, read a watched
+   citizen's `alcohol %.2f` figure while alcohol is locked: it must read 0.00,
+   not `locked_status`. It should also show 0.00 in the health ledger's
+   "Drinking alcohol" line whether or not the pub is built, since 1.2 pins the
+   status to 0 unconditionally rather than following `locked_status`.
+9. Watch a citizen use a service that is built but locked — a pub in 1925. They
    should still go in, and the *Unable to drink alcohol* line should stay at
    zero either way.
-7. Turn a year: play across an unlock boundary (or edit the ini to one year
-   ahead) and check the locked status did not arrive at zero. The culture status
-   in the citizen window should be at `locked_status`, not at the floor.
-8. Check the control: set every `[unlock]` key to `always` and confirm the game
-   is exactly as it was. Nothing is patched away in that state — the rates hold
-   their vanilla values and the demand bracket short-circuits on `g_anyLocked`.
+10. Turn a year: play across an unlock boundary (or edit the ini to one year
+    ahead) and check the locked status did not arrive at zero. The culture
+    status in the citizen window should be at `locked_status`, not at the
+    floor — except alcohol, which should still read 0.00 right up to its own
+    unlock year.
+11. Check the control: set every `[unlock]` key to `always` and confirm the
+    game is exactly as it was. Nothing is patched away in that state — the
+    rates hold their vanilla values and the demand bracket short-circuits on
+    `g_anyLocked`.
 
 ## What this does not do
 

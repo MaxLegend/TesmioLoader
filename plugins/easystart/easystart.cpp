@@ -63,6 +63,16 @@
 // cinema starts counting. Health is never pinned - it is the citizen's real
 // health - and neither is happiness, which is the thing being protected.
 //
+// Alcohol runs backwards and was pinned wrong through 1.1: fStatusAlcohol is
+// how much a citizen has been drinking, not how content they are, and it
+// feeds the health ledger's "Drinking alcohol" reason directly - the same
+// list that "Starving" and "Pollution" are on. Holding it at `locked_status`
+// (1.0 by default) told the health system every citizen was drinking at
+// capacity for as long as alcohol stayed locked, which is what the "status
+// bar at 100%" observed on the 1.0 save actually was. It is now pinned to 0
+// unconditionally - the one status where zero, not the configured level, is
+// what "this need does not exist yet" means.
+//
 //
 // 2. THE BUILDING SIDE IS TWELVE RATES IN .rdata
 //
@@ -168,7 +178,7 @@ static const struct
     { "meat",         -1, 1927 },
     { "clothes",       8, 1927 },
     { "electronics",   9, 1955 },
-    { "alcohol",       4, 1932 },
+    { "alcohol",       4, 1932 },   // fStatusAlcohol - inverted, see PinStatuses
     { "religion",      7, 1921 },
     { "culture",       5, 1940 },
     { "sport",         6, 1932 },
@@ -207,6 +217,8 @@ static const struct
 #define UNSAT_RES        0x08
 #define UNSAT_MAX        10
 
+#define PERSON_MONEY_SPENT 0x734  // 02-findings.md: money this person has spent
+
 #define PERSON_SIZE      0x750    // operator new(0x750) in the constructor
 
 // A resource record is 832 bytes and opens with its name.
@@ -234,15 +246,31 @@ static const struct
 // +0x11B10 (end). See docs/14-cities.md.
 #define GAME_BUILDING_VEC   0x11B08
 
+// The type lives on the building's *type descriptor*, not on the building
+// itself - confirmed both by depletion.cpp/accumulator.cpp (which already read
+// it this way, commented "typedesc -> building type") and by the vanilla
+// planner's own disassembly: `mov rdx,[person+0x20]` (the building) /
+// `mov r8,[rdx+0x318]` (its type descriptor) / `mov esi,[r8+0x360]` (the type).
+// Reading +0x360 straight off the building, as this file did through 1.2,
+// reads an unrelated field and never matches - see docs/07-pitfalls.md.
+#define B_TYPEDESC          0x318
 #define BUILDING_TYPE       0x360
 #define BUILDINGTYPE_LIVING 2        // SOVIETInstructions.txt: BUILDINGTYPE_LIVING = 2,
                                       // and no other type shares the number
+
+static int BuildingTypeOf(const BYTE* b)
+{
+    if (!b || !ReadablePtr(b, B_TYPEDESC + 8)) return -1;
+    const BYTE* td = *(const BYTE* const*)(b + B_TYPEDESC);
+    if (!td || !ReadablePtr(td, BUILDING_TYPE + 4)) return -1;
+    return *(const int*)(td + BUILDING_TYPE);
+}
 
 // ---------------------------------------------------------------- the sites
 
 // The evaluator. rcx is the world, rdx the person; its return value is dead at
 // the one call site.
-#define RVA_EVALUATE 0x83A6D0
+#define RVA_EVALUATE 0x83A870   // v1.1.1.13; was 0x83A6D0
 static const BYTE kEvaluatePrologue[] = {
     0x48, 0x8B, 0xC4,               // mov  rax,rsp
     0x55, 0x56, 0x57,               // push rbp / rsi / rdi
@@ -251,7 +279,7 @@ static const BYTE kEvaluatePrologue[] = {
 };
 
 // The living building's tick: (game, building, flag).
-#define RVA_LIVING_TICK 0x1BC210
+#define RVA_LIVING_TICK 0x1BC190   // v1.1.1.13; was 0x1BC210
 static const BYTE kLivingPrologue[] = {
     0x48, 0x8B, 0xC4,               // mov rax,rsp
     0x48, 0x89, 0x58, 0x10,         // mov [rax+0x10],rbx
@@ -262,8 +290,8 @@ static const BYTE kLivingPrologue[] = {
 
 // "Building is without power supply": the panel's own call, and the query it
 // calls. Only this one call site is redirected.
-#define RVA_POWER_CALL  0x76147B
-#define RVA_HAS_POWER   0x1BBFE0
+#define RVA_POWER_CALL  0x76161B   // v1.1.1.13; was 0x76147B
+#define RVA_HAS_POWER   0x1BBF60   // v1.1.1.13; was 0x1BBFE0
 static const BYTE kHasPowerHead[] = { 0x83, 0xB9, 0xB0, 0x05, 0x00, 0x00, 0x00 };
 
 // One repointed rate. `wide` marks a double rather than a float, which the two
@@ -291,25 +319,25 @@ static const BYTE kMovssXmm8[]   = { 0xF3, 0x44, 0x0F, 0x10, 0x05 }; // movss xm
 static const Rate kRates[] = {
     // 0x1BC210, the living tick: happiness for electricity and for water. Two
     // electricity branches, split on how the shortfall is measured.
-    { 0x1BC39B, kMulsdXmm1, 4, 0x909E38, 0.00021666666666666666, 1, NEED_ELECTRICITY, "electricity a"  },
-    { 0x1BC575, kMulsdXmm1, 4, 0x909E60, 0.00033333333333333332, 1, NEED_ELECTRICITY, "electricity b"  },
-    { 0x1BC74B, kMulssXmm3, 4, 0x909AF8, 0.0009999999310821295,  0, NEED_WATER,       "water happy"    },
+    { 0x1BC31B, kMulsdXmm1, 4, 0x909E40, 0.00021666666666666666, 1, NEED_ELECTRICITY, "electricity a"  },
+    { 0x1BC4F5, kMulsdXmm1, 4, 0x909E68, 0.00033333333333333332, 1, NEED_ELECTRICITY, "electricity b"  },
+    { 0x1BC6CB, kMulssXmm3, 4, 0x909B00, 0.0009999999310821295,  0, NEED_WATER,       "water happy"    },
 
     // 0x488B80, interior temperature: happiness in xmm7, health in xmm8, and a
     // second pair for the colder setting.
-    { 0x488BEA, kMovssXmm7, 4, 0x909B18, 0.001500000013038516,   0, NEED_HEATING,     "heat happy a"   },
-    { 0x488C1C, kMovssXmm7, 4, 0x909B04, 0.0011699999449774623,  0, NEED_HEATING,     "heat happy b"   },
-    { 0x488C06, kMovssXmm8, 5, 0x909B20, 0.0017000000225380063,  0, NEED_HEATING,     "heat health a"  },
-    { 0x488C24, kMovssXmm8, 5, 0x909B10, 0.0013259999686852098,  0, NEED_HEATING,     "heat health b"  },
+    { 0x488B7A, kMovssXmm7, 4, 0x909B20, 0.001500000013038516,   0, NEED_HEATING,     "heat happy a"   },
+    { 0x488BAC, kMovssXmm7, 4, 0x909B0C, 0.0011699999449774623,  0, NEED_HEATING,     "heat happy b"   },
+    { 0x488B96, kMovssXmm8, 5, 0x909B28, 0.0017000000225380063,  0, NEED_HEATING,     "heat health a"  },
+    { 0x488BB4, kMovssXmm8, 5, 0x909B18, 0.0013259999686852098,  0, NEED_HEATING,     "heat health b"  },
 
     // 0x1B0950, drinking water: health, in two blocks. The second picks its
     // rate from the difficulty; the first has a bonus term for clean water,
     // which is zeroed as well - a locked need must not pay either way.
-    { 0x1B0B37, kMulssXmm2, 4, 0x909ABC, 0.0002500000118743628,  0, NEED_WATER,       "water health a" },
-    { 0x1B0B44, kMulssXmm0, 4, 0x909AC4, 0.00031250002211891115, 0, NEED_WATER,       "water health b" },
-    { 0x1B1203, kMulssXmm1, 4, 0x909AA8, 0.0001875000016298145,  0, NEED_WATER,       "water health c" },
-    { 0x1B1213, kMulssXmm1, 4, 0x909ABC, 0.0002500000118743628,  0, NEED_WATER,       "water health d" },
-    { 0x1B1223, kMulssXmm1, 4, 0x909AC4, 0.00031250002211891115, 0, NEED_WATER,       "water health e" },
+    { 0x1B0B44, kMulssXmm2, 4, 0x909AC4, 0.0002500000118743628,  0, NEED_WATER,       "water health a" },
+    { 0x1B0B51, kMulssXmm0, 4, 0x909ACC, 0.00031250002211891115, 0, NEED_WATER,       "water health b" },
+    { 0x1B0F82, kMulssXmm1, 4, 0x909AB0, 0.0001875000016298145,  0, NEED_WATER,       "water health c" },
+    { 0x1B0F92, kMulssXmm1, 4, 0x909AC4, 0.0002500000118743628,  0, NEED_WATER,       "water health d" },
+    { 0x1B0FA2, kMulssXmm1, 4, 0x909ACC, 0.00031250002211891115, 0, NEED_WATER,       "water health e" },
 };
 
 #define RATE_COUNT ((int)(sizeof(kRates) / sizeof(kRates[0])))
@@ -325,13 +353,13 @@ struct EduSite
 };
 
 static const EduSite kEduSites[] = {
-    { 0x823AE9, NEED_SCHOOL,       "school: basic education at birth"   },
-    { 0x824116, NEED_SCHOOL,       "school: education for a new citizen" },
-    { 0x824145, NEED_SCHOOL,       "school: the same, second branch"    },
-    { 0x834D65, NEED_SCHOOL,       "school: education on arrival"       },
-    { 0x7618E7, NEED_SCHOOL,       "school: the panel's warning"        },
-    { 0x824AEB, NEED_KINDERGARTEN, "kindergarten: a parent's job search" },
-    { 0x761928, NEED_KINDERGARTEN, "kindergarten: the panel's warning"  },
+    { 0x823C89, NEED_SCHOOL,       "school: basic education at birth"   },
+    { 0x8242B6, NEED_SCHOOL,       "school: education for a new citizen" },
+    { 0x8242E5, NEED_SCHOOL,       "school: the same, second branch"    },
+    { 0x834F05, NEED_SCHOOL,       "school: education on arrival"       },
+    { 0x761A87, NEED_SCHOOL,       "school: the panel's warning"        },
+    { 0x824C8B, NEED_KINDERGARTEN, "kindergarten: a parent's job search" },
+    { 0x761AC8, NEED_KINDERGARTEN, "kindergarten: the panel's warning"  },
 };
 
 #define EDU_SITE_COUNT ((int)(sizeof(kEduSites) / sizeof(kEduSites[0])))
@@ -676,7 +704,13 @@ static void PinStatuses(BYTE* person)
     for (int i = 0; i < NEED_COUNT; i++)
     {
         if (!g_locked[i] || kNeeds[i].status < 0) continue;
-        *(float*)(person + PERSON_STATUS + (size_t)kNeeds[i].status * 4) = g_lockedLevel;
+
+        // Every status but alcohol reads "how content is this citizen" - 1.0 is
+        // the goal. Alcohol reads "how much has this citizen been drinking" and
+        // feeds a health penalty directly, so its own goal while locked is 0,
+        // never the configured level.
+        float level = (i == NEED_ALCOHOL) ? 0.0f : g_lockedLevel;
+        *(float*)(person + PERSON_STATUS + (size_t)kNeeds[i].status * 4) = level;
     }
 }
 
@@ -744,7 +778,7 @@ static void SweepExistingBuildings(void* game)
 
         __try
         {
-            if (*(const int*)(b + BUILDING_TYPE) == BUILDINGTYPE_LIVING)
+            if (BuildingTypeOf(b) == BUILDINGTYPE_LIVING)
             {
                 if (Locked(NEED_ELECTRICITY))
                 {
@@ -828,13 +862,47 @@ static void DumpWatch(void* game)
             int         kind = *(const int*)(d + DEMAND_KIND);
             int         mod  = 0;
             int         need = NeedOfDemand((BYTE*)game, d, &mod);
+
+            // need<0 on a shop-good kind (1 or 2) means the resource pointer
+            // did not match game+0xC300.."0x320 - print its own name instead
+            // of guessing whether that is really food misclassified or a
+            // genuinely different good.
+            char nm[24] = "";
+            if (need < 0 && (kind == 1 || kind == 2))
+            {
+                const void* res = *(const void* const*)(d + DEMAND_RES);
+                if (res) SafeReadStr((const BYTE*)res + RESOURCE_NAME, nm, sizeof(nm));
+            }
             off += _snprintf_s(buf + off, sizeof(buf) - off, _TRUNCATE,
-                               " [%d]kind%d/need%d", k, kind, need);
+                               " [%d]kind%d/need%d%s%s", k, kind, need,
+                               nm[0] ? "=" : "", nm);
         }
         const float* s = (const float*)(p + PERSON_STATUS);
         Logf("easystart  probe  watch[%d] %p (building %p): %d demand(s)%s "
              " food %.2f clothing %.2f alcohol %.2f culture %.2f",
              i, p, g_watchBuilding[i], n, buf, s[1], s[8], s[4], s[5]);
+
+        // Diagnostic for "food never arrives for a pre-existing citizen": is the
+        // status float genuinely frozen bit-for-bit, or drifting below what
+        // %.2f shows? And does this citizen's building read as a living
+        // building at all - through the type descriptor, the way BuildingTypeOf
+        // now reads it, not straight off the building the way this line used to.
+        int buildingType = BuildingTypeOf((const BYTE*)g_watchBuilding[i]);
+
+        int unsatN = *(const int*)(p + PERSON_UNSAT);
+        char ubuf[128];
+        int  uoff = 0;
+        ubuf[0] = 0;
+        if (unsatN > 0 && unsatN <= UNSAT_MAX)
+            for (int u = 0; u < unsatN && uoff < (int)sizeof(ubuf) - 16; u++)
+                uoff += _snprintf_s(ubuf + uoff, sizeof(ubuf) - uoff, _TRUNCATE,
+                                     " kind%d", *(const int*)(p + PERSON_UNSAT_E +
+                                     (size_t)u * UNSAT_STRIDE + UNSAT_KIND));
+
+        Logf("easystart  probe  watch[%d]   food %.8f (raw bits %08X)  building type %d"
+             "  unsatisfied %d(%s)  money-spent %.2f",
+             i, s[1], *(const DWORD*)(s + 1), buildingType, unsatN, ubuf,
+             *(const float*)(p + PERSON_MONEY_SPENT));
     }
 }
 
@@ -1136,7 +1204,7 @@ extern "C" __declspec(dllexport) int TsmPluginInit(const TsmHost* host, TsmPlugi
 {
     TsmBind(host);
     info->name    = "easystart";
-    info->version = "1.1";
+    info->version = "1.2";
 
     ReadSettings();
     if (!g_enabled)

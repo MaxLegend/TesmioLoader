@@ -106,8 +106,8 @@
 // building vector at +0x11B08, the unpowered flag at +0x1130 and the voltage
 // pointer at +0x10E8 - not by the offset alone.
 #define P_DISPATCH_RVA    0x139A70   // was 0x139A80 - one simulation tick
-#define P_NODE_SHARE_RVA  0x1BB770   // was 0x1BB700 (game, building, what, priority)
-#define P_SUB_SHARE_RVA   0x1B96B0   // was 0x1B9640 - hands its
+#define P_NODE_SHARE_RVA  0x1BB6F0  // v1.1.1.13; was 0x1BB770. (game, building, what, priority)
+#define P_SUB_SHARE_RVA   0x1B9630  // v1.1.1.13; was 0x1B96B0 - hands its
                                      // storage to the buildings in its catchment
 
 // FUN_1401bb700's third argument decides which of the two things a grid node
@@ -135,7 +135,7 @@
 #define NODE_SHARE_ENERGY  1
 #define NODE_ANY_PRIORITY  (-1)
 #define P_TIMER_OBJ       0x9D4EE0   // the C3D_TIMER the simulation steps on
-#define P_TIMER_STEP      0x909AFC   // 0.001f, the argument every PowerTime passes
+#define P_TIMER_STEP      0x909B04  // v1.1.1.13; was 0x909AFC.  0.001f, the argument every PowerTime passes
                                      // (.rdata moved -0x18 in v1.1.1.9)
 
 // The electric panel - the two dials in a grid node's window.
@@ -147,11 +147,11 @@
 // type descriptor declares electricity use. Every panel in that window takes
 // the running Y **by pointer** and leaves the next row's Y in it, which is what
 // makes one more row cheap: draw at *y and add a row height back.
-#define P_ELEC_PANEL_RVA  0x702730   // v1.1.1.9; was 0x702610
+#define P_ELEC_PANEL_RVA  0x7028D0  // v1.1.1.13; was 0x702730
 #define P_FONTMANAGER     0x996FB0   // C3D_FONTMANAGER, by address
 #define P_PANEL_FONT      0x995220   // the C3D_FONT* the panel's rows use
 #define P_DPI             0x992088   // the scale every layout constant is multiplied by
-#define P_ROW_STEP        0x90A9CC   // 35 - one row, and the x indent as well
+#define P_ROW_STEP        0x90A9DC  // v1.1.1.13; was 0x90A9CC.  35 - one row, and the x indent as well
 #define W_BUILDING        0x240      // window -> the building it is about
 #define W_COLLAPSED       0x248      // non-zero while the section is rolled up
 #define PANEL_LABEL_COLOUR 0xFF990000u

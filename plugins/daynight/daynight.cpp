@@ -170,17 +170,17 @@
 
 // The weather and day/night state machine. Called once per tick with the world
 // object in rcx and a "this is a fresh world" flag in dl.
-#define RVA_WEATHER_TICK  0x333BD0
+#define RVA_WEATHER_TICK  0x333B50   // v1.1.1.13; was 0x333BD0
 
 // How lit the world is, 0..1. Pure, reads five fields of the world object and
 // returns a float in xmm0.
-#define RVA_LIGHT_FACTOR  0x5CFC40
+#define RVA_LIGHT_FACTOR  0x5CFBD0   // v1.1.1.13; was 0x5CFC40
 
 // `char IsSnowSeason(world)` - reads world+0x590 and the climate out of the
 // settings object, and answers whether that day of the year is in the snow
 // part of it. Called by the weather tick, which is why the shadowed date has
 // to agree with the real one about it.
-#define RVA_SNOW_SEASON   0x3343E0
+#define RVA_SNOW_SEASON   0x334360   // v1.1.1.13; was 0x3343E0
 
 // The C3D_TIMER every simulation rate in the game is integrated from. Only
 // touched in `slow = world` mode.
@@ -190,7 +190,7 @@
 // `call qword ptr [PowerTime]`. Verified as a unit, because between them those
 // bytes prove that 0x9D4EE0 is a C3D_TIMER and that this call is on it -
 // needed only to confirm `slow = world` is scaling the right object.
-#define RVA_DAYTICK_POWER 0x334AA0
+#define RVA_DAYTICK_POWER 0x334A20   // v1.1.1.13; was 0x334AA0
 
 // The three per-calendar-day passes that integrate real elapsed time rather
 // than just bookkeeping the date, and so are the ones that desynchronise from
@@ -202,18 +202,18 @@
 // game itself would not eventually have made. Resolved and called directly,
 // like the snow-season test - never hooked, because nothing here needs to
 // intercept the day tick's own (rarer, but still genuine) calls to them.
-#define RVA_DAILY_POLLUTION 0x4D5F50   // decay the grid, accumulate exposure
-#define RVA_DAILY_LOANS     0x4B9660   // one day of interest and repayment
-#define RVA_DAILY_NOTICES   0x4CD380   // age the notification list, drop the expired
+#define RVA_DAILY_POLLUTION 0x4D5EE0  // v1.1.1.13; was 0x4D5F50.  decay the grid, accumulate exposure
+#define RVA_DAILY_LOANS     0x4B95F0  // v1.1.1.13; was 0x4B9660.  one day of interest and repayment
+#define RVA_DAILY_NOTICES   0x4CD310  // v1.1.1.13; was 0x4CD380.  age the notification list, drop the expired
 
 // The 60.0f one calendar day lasts, as the day tick reads it.
-#define RVA_DAY_LENGTH    0x90AA78
+#define RVA_DAY_LENGTH    0x90AA88   // v1.1.1.13; was 0x90AA78
 #define VANILLA_DAY_LEN   60.0f
 
 // `mov dword ptr [r10+0xED4], 0x41700000` - the cross-fade duration written on
 // every weather change. The opcode is checked and the immediate is read rather
 // than assumed.
-#define RVA_FADE_MOV      0x334224
+#define RVA_FADE_MOV      0x3341A4   // v1.1.1.13; was 0x334224
 #define RVA_FADE_IMM      (RVA_FADE_MOV + 7)
 #define VANILLA_FADE      15.0f
 

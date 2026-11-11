@@ -602,7 +602,10 @@ static HANDLE WINAPI h_CreateFile2(LPCWSTR path, DWORD access, DWORD share,
 //   [20] +0xA0  TextureAccesGetTexel(x, y) -> colour
 //   [23] +0xB8  TextureAccesSetTexel(x, y, colour)
 //   [36] +0x120 SaveToDDS          - how depletion survives a save
-#define TEX_VTABLE_RVA   0x187BF0
+#define TEX_VTABLE_RVA   0x187BF0   // C3DDLL64.dll rva - the 2026-11-11 engine
+                                    // update changed 34 bytes of timestamps
+                                    // only; v1.1.1.13: unchanged, verified by
+                                    // a byte-for-byte section diff
 #define TEX_SLOT_LOAD    2
 #define TEX_SLOT_GETTEXEL 20
 
@@ -1864,7 +1867,7 @@ static void NoteSaveOpenW(const wchar_t* path, bool writing)
 //
 // The suffix is appended to the format string rather than printed separately,
 // so the game does the drawing and the line stays one string with one layout.
-#define P_MENU_VERSION_SITE 0x28B5CC     // v1.1.1.9; was 0x28B55C. LEA RAX,[rip+disp32] - the format argument
+#define P_MENU_VERSION_SITE 0x28B54C  // v1.1.1.13; was 0x28B5CC. LEA RAX,[rip+disp32] - the format argument
 #define MENU_LEA_LEN        7
 
 static const BYTE kMenuLeaOrig[3] = { 0x48, 0x8D, 0x05 };   // lea rax,[rip+disp32]
