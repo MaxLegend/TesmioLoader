@@ -1,9 +1,18 @@
 # Plugins
 
-A plugin is an ordinary DLL in `build/plugins/`. The loader finds it at startup,
-checks it was built against a compatible `src/tesmio_api.h`, and hands it a
-table of the things the loader already knows how to do. The plugin patches the
-game from there.
+A plugin is a 64-bit DLL that exports `TsmPluginApiVersion` and `TsmPluginInit`.
+The launcher and loader inspect the export table without running the DLL.
+They scan `plugins\` beside `tesmioloader.dll` and recurse through
+`steamapps\workshop\content\784150\` in the same Steam library.
+`[tesmioloader] workshop_path` overrides the Workshop directory. A local DLL
+with the same name takes precedence. The loader checks API compatibility after
+loading the selected DLL and before calling `TsmPluginInit`.
+
+Ship `<name>.ini` beside `<name>.dll`. The launcher's gear opens a vertical form.
+Each row shows the parameter name, its editable value, and `(?)` when the
+parameter has a preceding comment block. Hover over `(?)` to read the comment.
+The editor writes only the changed values and preserves the surrounding INI
+structure and encoding.
 
 Removing a feature is deleting its DLL. Adding one is dropping a folder in
 `plugins/` and rebuilding — nothing in `build.bat` or in the loader lists them
@@ -131,14 +140,14 @@ the host hands out stay valid for the life of the process.
 |---|---|
 | `exeBase`, `exeSize`, `exeModule` | `SOVIET64.exe`. Add an RVA to `exeBase`; ASLR is on and nothing may be hard-coded absolute |
 | `engineModule` | `C3DDLL64.dll` |
-| `baseDir`, `pluginDir` | where the loader and the plugins live |
+| `baseDir`, `pluginDir` | the loader directory and the directory of the current plugin |
 | `log` | one line into `tesmioloader.log`. Prefix it with the plugin's short name, as every subsystem does |
 | `findIatSlot`, `patchIat` | import table. **First choice** for anything named — no fixed addresses, survives a game update |
 | `installInlineHook` | relocates a prologue into a trampoline and writes a 14-byte absolute jump. Compares the site against `expect` first and refuses on a mismatch |
 | `allocNear` | executable memory within ±2 GB, for a cave a `call rel32` can reach |
 | `readablePtr` | is this range committed and readable |
 | `faultFilter` | for the filter expression of a `__try` around anything reading game structures |
-| `configInt`, `configString` | a key out of an ini resolved against `baseDir` |
+| `configInt`, `configString` | reads `plugins\<name>.ini` beside the discovered plugin when it is loaded. Other paths resolve against `baseDir` |
 | `provide`, `consume` | the service noticeboard, below |
 
 A vtable swap needs no host help at all — the vtable is in the engine and the

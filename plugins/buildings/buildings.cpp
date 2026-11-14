@@ -685,7 +685,7 @@ static void AppendMulti(char* dst, size_t cap, const char* text)
 static void LoadRegistry(void)
 {
     char path[MAX_PATH];
-    _snprintf_s(path, sizeof(path), _TRUNCATE, "%s\\plugins\\buildings.ini", g_baseDir);
+    _snprintf_s(path, sizeof(path), _TRUNCATE, "%s\\buildings.ini", H->pluginDir);
 
     char* text = ReadTextFile(path, NULL);
     if (!text)

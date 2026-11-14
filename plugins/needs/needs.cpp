@@ -1416,7 +1416,7 @@ static void WarnCategoryMismatch(const Need* n)
 static void LoadRegistry()
 {
     char path[MAX_PATH];
-    _snprintf_s(path, sizeof(path), _TRUNCATE, "%s\\plugins\\needs.ini", g_baseDir);
+    _snprintf_s(path, sizeof(path), _TRUNCATE, "%s\\needs.ini", H->pluginDir);
 
     HANDLE h = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ, NULL,
                            OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);

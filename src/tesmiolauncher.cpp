@@ -63,16 +63,15 @@
 #include <windows.h>
 #include <commctrl.h>
 #include <commdlg.h>
+#include <shlobj.h>
+#include <map>
 #include <shellapi.h>           // WIN32_LEAN_AND_MEAN leaves this one out
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-// For TSM_API_VERSION, TSM_EXPORT_APIVERSION and TsmPluginApiVersionFn - the
-// launcher probes the same export the loader checks in LoadPlugins, so both
-// sides read one definition and can never disagree about what "compatible"
-// means.
-#include "tesmio_api.h"
+#include "tesmio_discovery.h"
+#include "tesmio_ini_editor.h"
 
 // The signature check. The format and the CNG primitives live in
 // tesmio_sign.h; the public half of Tesmio's key pair is tesmio_pubkey.h,
@@ -103,6 +102,7 @@
 #pragma comment(lib, "comctl32.lib")
 #pragma comment(lib, "comdlg32.lib")
 #pragma comment(lib, "shell32.lib")
+#pragma comment(lib, "ole32.lib")
 
 // Themed controls without a resource script: build.bat compiles one .cpp per
 // binary and a .rc would put a second tool in that chain. This is the same
@@ -119,7 +119,6 @@
 #define LOADER_DLL      L"tesmioloader.dll"
 #define LOADER_INI      L"tesmioloader.ini"
 
-#define MAX_PLUGINS     32                  // mirrors the loader's own cap
 #define WALK_UP_LEVELS  8
 
 // The build of the game this project is written against. Every hard-coded rva
@@ -738,10 +737,13 @@ static const GameVersion* GameVersionOf(const wchar_t* exe)
 // window: turning the gate off is for whoever is porting the addresses to a new
 // build, and that person can edit an ini or pass a flag.
 static bool g_versionCheck = true;
+static bool g_nonSteam;
+
+static bool EnforceGameVersion() { return g_versionCheck && !g_nonSteam; }
 
 static bool VersionRefuses(const GameVersion* g)
 {
-    if (!g_versionCheck) return false;
+    if (!EnforceGameVersion()) return false;
     return !g || g->verdict == GV_WRONG || g->verdict == GV_UNKNOWN;
 }
 
@@ -751,7 +753,7 @@ static bool VersionRefuses(const GameVersion* g)
 static void VersionRequirementText(wchar_t* out, size_t n)
 {
     _snwprintf_s(out, n, _TRUNCATE,
-                 g_versionCheck
+                 EnforceGameVersion()
                      ? L"Requires Workers & Resources %s (64 bit)"
                      : L"Built for Workers & Resources %s (64 bit) - the check "
                        L"is off, other versions may crash.",
@@ -775,12 +777,12 @@ static void VersionStatusText(const GameVersion* g, wchar_t* out, size_t n)
     case GV_WRONG:
         _snwprintf_s(out, n, _TRUNCATE,
                      L"Installed: v%s - NOT supported, %s", g->text,
-                     g_versionCheck ? L"launch refused" : L"launching anyway");
+                     EnforceGameVersion() ? L"launch refused" : L"launching anyway");
         break;
     default:
         _snwprintf_s(out, n, _TRUNCATE,
                      L"Installed: version could not be read - %s",
-                     g_versionCheck ? L"launch refused" : L"launching anyway");
+                     EnforceGameVersion() ? L"launch refused" : L"launching anyway");
         break;
     }
 }
@@ -797,74 +799,31 @@ static void VersionStatusText(const GameVersion* g, wchar_t* out, size_t n)
 // non-ASCII folder name is at least worth trying to keep.
 
 static wchar_t g_ini[MAX_PATH];
-static char    g_iniA[MAX_PATH];
-static wchar_t g_version[64] = L"";
+static wchar_t g_version[64];
+static std::wstring g_localPlugins;
+static std::wstring g_workshopOverride;
+static std::wstring g_workshopDefault;
+static std::wstring g_scannedWorkshop;
 
 struct PluginEntry
 {
-    wchar_t  file[64];      // resources.dll
-    char     key[64];       // resources - the [plugins] key, and the loader's
-    bool     on;
-    HWND     box;
-    unsigned apiVersion;    // what TsmPluginApiVersion() returned, 0 if unreadable
-    bool     apiKnown;      // the export was found and called without faulting
-    bool     apiOk;         // apiKnown && apiVersion == TSM_API_VERSION
-    int      sig;           // TSM_SIG_* - whose signature the DLL carries
+    tsm::PluginFile file;
+    bool on;
+    HWND box;
+    int sig;
 };
 
-// The three answers the signature check can give. NONE and BAD both mean "not
-// from Tesmio"; BAD is the stronger statement - a signature file exists and
-// does not verify, so the bytes changed after somebody signed them.
-#define TSM_SIG_NONE 0      // no <name>.dll.sig beside the DLL
-#define TSM_SIG_OK   1      // the signature verifies against TSM_PUBLIC_KEY
-#define TSM_SIG_BAD  2      // a .sig is there and does not verify
-static PluginEntry g_plug[MAX_PLUGINS];
-static int         g_plugCount;
-static bool        g_host = true;       // [tesmioloader] plugins
+#define TSM_SIG_NONE 0
+#define TSM_SIG_OK   1
+#define TSM_SIG_BAD  2
+static std::vector<PluginEntry> g_plug;
+static bool g_host = true;
 
 static void SetIniPath(const wchar_t* dllDir)
 {
     Join(g_ini, _countof(g_ini), dllDir, LOADER_INI);
-    WideCharToMultiByte(CP_ACP, 0, g_ini, -1, g_iniA, sizeof(g_iniA), NULL, NULL);
-}
-
-// Loads a plugin DLL just far enough to ask it TsmPluginApiVersion(), then
-// unloads it again - the same two GetProcAddress calls and the same SEH guard
-// tesmioloader.cpp's LoadPlugins uses before it will call Init, just run here
-// so a mismatch is visible in the launcher window rather than only in
-// tesmioloader.log after the game has already been injected.
-//
-// Every shipped plugin's DllMain is a bare `return TRUE` on attach - the real
-// work happens in TsmPluginInit, which this never calls - so loading it here,
-// in the launcher's own process, does nothing the plugin would not have done
-// harmlessly anyway. FreeLibrary's DLL_PROCESS_DETACH is likewise a no-op: the
-// one plugin that closes a handle there (resources.dll) guards it with the
-// INVALID_HANDLE_VALUE its static keeps until Init runs, which never happens.
-//
-// Returns false when the DLL would not load at all or carries no
-// TsmPluginApiVersion export - "not a tesmioloader plugin", the loader's own
-// other rejection reason - rather than a version number.
-static bool QueryPluginApiVersion(const wchar_t* fullPath, unsigned* out)
-{
-    *out = 0;
-
-    HMODULE mod = LoadLibraryExW(fullPath, NULL, LOAD_WITH_ALTERED_SEARCH_PATH);
-    if (!mod) return false;
-
-    TsmPluginApiVersionFn ver =
-        (TsmPluginApiVersionFn)GetProcAddress(mod, TSM_EXPORT_APIVERSION);
-    if (!ver) { FreeLibrary(mod); return false; }
-
-    unsigned got = 0;
-    bool ok = true;
-    __try { got = ver(); }
-    __except (EXCEPTION_EXECUTE_HANDLER) { ok = false; }
-
-    FreeLibrary(mod);
-    if (!ok) return false;
-
-    *out = got;
-    return true;
+    g_localPlugins = tsm::JoinPath(dllDir, L"plugins");
+    g_workshopDefault = tsm::WorkshopDefault(dllDir);
 }
 
 // Verifies <dllPath>.sig against the bytes of dllPath, using the public key
@@ -923,31 +882,6 @@ static int CheckPluginSignature(const wchar_t*) { return TSM_SIG_NONE; }
 #endif
 
 // Empty when the plugin's own reported version is one this loader accepts.
-// Otherwise the same two rejection reasons LoadPlugins logs - "not initialised"
-// or "no TsmPluginApiVersion export" - phrased for the window and the --find
-// printout rather than the log file.
-//
-// `brief` is the window's form. A checkbox in a two-column list has room for
-// roughly fifty characters, and the long form is written for a console line
-// that has as many as it likes.
-static void PluginWarning(const PluginEntry* e, wchar_t* out, size_t n, bool brief)
-{
-    out[0] = 0;
-    if (e->apiOk) return;
-
-    // One sentence for both directions. A plugin can be too old (built before
-    // TSM_API_VERSION_MIN, so a field it reads has moved) or too new (built
-    // against a header this loader does not have yet), and the range says which
-    // without the reader having to be told the rule.
-    if (e->apiKnown)
-        _snwprintf_s(out, n, _TRUNCATE,
-                     brief ? L"API %u, needs %u-%u"
-                           : L"incompatible: reports API %u, this loader takes %u to %u",
-                     e->apiVersion, TSM_API_VERSION_MIN, TSM_API_VERSION);
-    else
-        wcscpy_s(out, n, brief ? L"not a plugin" : L"not a tesmioloader plugin");
-}
-
 // The provenance half of a plugin's label, and only a valid seal is stated.
 //
 // A plugin with no .sig gets NOTHING - no mark at all. It used to say "not from
@@ -977,111 +911,89 @@ static void PluginSigNote(const PluginEntry* e, wchar_t* out, size_t n, bool bri
 // Everything the window and --find have to say about a plugin, in one string:
 // whose signature it carries, then whether this loader will initialise it.
 // Can come back empty, and both callers then print the bare file name.
-static void PluginNote(const PluginEntry* e, wchar_t* out, size_t n, bool brief)
+static std::wstring EffectiveWorkshop()
 {
-    wchar_t sig[96], warn[96];
-    PluginSigNote(e, sig, _countof(sig), brief);
-    PluginWarning(e, warn, _countof(warn), brief);
-
-    if (sig[0] && warn[0])
-        _snwprintf_s(out, n, _TRUNCATE, L"%s, %s", sig, warn);
-    else if (warn[0])
-        wcscpy_s(out, n, warn);
-    else
-        wcscpy_s(out, n, sig);
+    return g_workshopOverride.empty() ? g_workshopDefault : g_workshopOverride;
 }
 
-// Alphabetical, which is what FindFirstFile gives on NTFS and the order the
-// loader will load them in.
-static void ScanPlugins(const wchar_t* dllDir)
+struct PluginKeyLess
 {
-    wchar_t pluginsDir[MAX_PATH];
-    Join(pluginsDir, _countof(pluginsDir), dllDir, L"plugins");
-
-    wchar_t pattern[MAX_PATH];
-    Join(pattern, _countof(pattern), pluginsDir, L"*.dll");
-
-    WIN32_FIND_DATAW fd;
-    HANDLE h = FindFirstFileW(pattern, &fd);
-    if (h == INVALID_HANDLE_VALUE) return;
-
-    do
+    bool operator()(const std::wstring& a, const std::wstring& b) const
     {
-        if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
-        if (g_plugCount >= MAX_PLUGINS) break;
+        return _wcsicmp(a.c_str(), b.c_str()) < 0;
+    }
+};
+static std::map<std::wstring, bool, PluginKeyLess> g_pluginChoices;
 
-        PluginEntry* e = &g_plug[g_plugCount++];
-        memset(e, 0, sizeof(*e));
-        wcscpy_s(e->file, _countof(e->file), fd.cFileName);
+static void ScanPlugins()
+{
+    g_scannedWorkshop = EffectiveWorkshop();
+    g_plug.clear();
+    for (auto& file : tsm::DiscoverPlugins(g_localPlugins, g_scannedWorkshop))
+    {
+        auto choice = g_pluginChoices.find(file.key);
+        const bool on = choice != g_pluginChoices.end() ? choice->second :
+            GetPrivateProfileIntW(L"plugins", file.key.c_str(), 1, g_ini) != 0;
+        const int sig = CheckPluginSignature(file.path.c_str());
+        g_plug.push_back({std::move(file), on, NULL, sig});
+    }
+}
 
-        wchar_t stem[64];
-        wcscpy_s(stem, _countof(stem), fd.cFileName);
-        if (wchar_t* dot = wcsrchr(stem, L'.')) *dot = 0;
-        WideCharToMultiByte(CP_ACP, 0, stem, -1, e->key, sizeof(e->key), NULL, NULL);
+#define TSM_STRINGIFY_IMPL(value) #value
+#define TSM_STRINGIFY(value) TSM_STRINGIFY_IMPL(value)
 
-        e->on = GetPrivateProfileIntA("plugins", e->key, 1, g_iniA) != 0;
-
-        wchar_t full[MAX_PATH];
-        Join(full, _countof(full), pluginsDir, fd.cFileName);
-        // The same range LoadPlugins accepts, and it must stay the same range:
-        // a box the launcher ticks and the loader then refuses would be lying
-        // about what ticking it does. See tesmio_api.h on TSM_API_VERSION_MIN.
-        e->apiKnown = QueryPluginApiVersion(full, &e->apiVersion);
-        e->apiOk    = e->apiKnown &&
-                      e->apiVersion >= TSM_API_VERSION_MIN &&
-                      e->apiVersion <= TSM_API_VERSION;
-        e->sig      = CheckPluginSignature(full);
-
-        // The loader will refuse to initialise this one regardless of what the
-        // ini says, so a checked box would be lying about what ticking it
-        // does. Forcing it off here is what SaveConfig then persists, and what
-        // the checkbox below is built already unchecked from.
-        if (!e->apiOk) e->on = false;
-    } while (FindNextFileW(h, &fd));
-
-    FindClose(h);
+static bool CreateDefaultConfig()
+{
+    HANDLE file = CreateFileW(g_ini, GENERIC_WRITE, 0, NULL, CREATE_NEW,
+                              FILE_ATTRIBUTE_NORMAL, NULL);
+    if (file == INVALID_HANDLE_VALUE)
+        return GetLastError() == ERROR_FILE_EXISTS && Exists(g_ini);
+    constexpr char defaults[] =
+        "[tesmioloader]\r\n"
+        "version = " TSM_STRINGIFY(TSM_RELEASE_VERSION) "\r\n"
+        "version_check = 1\r\n"
+        "non_steam = 0\r\n"
+        "plugins = 1\r\n"
+        "workshop_path =\r\n"
+        "vfs = 1\r\n"
+        "save_manifest = 1\r\n"
+        "menu_patch = 1\r\n";
+    DWORD written = 0;
+    const bool ok = WriteFile(file, defaults, sizeof(defaults) - 1, &written, NULL) &&
+                    written == sizeof(defaults) - 1;
+    CloseHandle(file);
+    if (!ok) DeleteFileW(g_ini);
+    return ok;
 }
 
 static void ReadConfig()
 {
-    g_host = GetPrivateProfileIntA("tesmioloader", "plugins", 1, g_iniA) != 0;
-    GetPrivateProfileStringW(L"tesmioloader", L"version", L"unknown",
+    GetPrivateProfileStringW(L"tesmioloader", L"version", L"",
                              g_version, _countof(g_version), g_ini);
-
-    // The version gate. Absent means on: a fresh install must refuse a game it
-    // cannot patch, and turning that off has to be something someone did on
-    // purpose. --ignore-version does the same for one run.
-    g_versionCheck = GetPrivateProfileIntA("tesmioloader", "version_check", 1, g_iniA) != 0;
+    g_host = GetPrivateProfileIntW(L"tesmioloader", L"plugins", 1, g_ini) != 0;
+    g_versionCheck = GetPrivateProfileIntW(L"tesmioloader", L"version_check", 1, g_ini) != 0;
+    g_nonSteam = GetPrivateProfileIntW(L"tesmioloader", L"non_steam", 0, g_ini) != 0;
+    g_workshopOverride = tsm::ReadWorkshopOverride(g_ini);
 }
 
-// Creates the ini when it is not there. Everything the loader does not find in
-// it falls back to the same compiled default it would have used with no file at
-// all, so a file holding only these keys behaves as before - and the game path
-// is remembered even on an install that arrived without an ini.
-//
-// The profile API never writes a BOM and edits in place, so the comments in the
-// shipped file survive. That matters: writing this file with PowerShell's
-// -Encoding UTF8 has broken the whole config once already.
-static void SaveConfig(const wchar_t* gameExe)
+static bool SaveConfig(const wchar_t* gameExe)
 {
-    WritePrivateProfileStringW(L"tesmioloader", L"game_exe", gameExe, g_ini);
-    WritePrivateProfileStringA("tesmioloader", "plugins", g_host ? "1" : "0", g_iniA);
+    wchar_t tag[96] = L"TesmioLoader";
+    if (g_version[0])
+        _snwprintf_s(tag, _countof(tag), _TRUNCATE, L"tesmioloader v. %s", g_version);
+    if (!WritePrivateProfileStringW(L"tesmioloader", L"game_exe", gameExe, g_ini) ||
+        !WritePrivateProfileStringW(L"tesmioloader", L"non_steam", g_nonSteam ? L"1" : L"0", g_ini) ||
+        !WritePrivateProfileStringW(L"tesmioloader", L"plugins", g_host ? L"1" : L"0", g_ini) ||
+        !WritePrivateProfileStringW(L"tesmioloader", L"menu_tag", tag, g_ini) ||
+        !WritePrivateProfileStringW(L"tesmioloader", tsm::kWorkshopSetting,
+                                   g_workshopOverride.empty() ? NULL : g_workshopOverride.c_str(), g_ini))
+        return false;
 
-    // Not a setting - regenerated from `version` on every launch and written
-    // straight into the loader's own [tesmioloader] section, so nobody has to
-    // keep the two in step by hand. (This used to land under "tsmloader" -
-    // one letter short of the section tesmioloader.cpp's ReadConfig actually
-    // reads - which is why the menu kept showing its compiled-in default no
-    // matter what `version` said.)
-    char versionA[64] = {0};
-    WideCharToMultiByte(CP_ACP, 0, g_version, -1, versionA, sizeof(versionA), NULL, NULL);
-    char menu_tagA[128];
-    _snprintf_s(menu_tagA, _countof(menu_tagA), _TRUNCATE, "tesmioloader v. %s", versionA);
-    WritePrivateProfileStringA("tesmioloader", "menu_tag", menu_tagA, g_iniA);
-
-    for (int i = 0; i < g_plugCount; i++)
-        WritePrivateProfileStringA("plugins", g_plug[i].key,
-                                   g_plug[i].on ? "1" : "0", g_iniA);
+    for (const auto& entry : g_plug)
+        if (!WritePrivateProfileStringW(L"plugins", entry.file.key.c_str(),
+                                       entry.on ? L"1" : L"0", g_ini))
+            return false;
+    return true;
 }
 
 // ---------------------------------------------------------------- injection
@@ -1175,15 +1087,20 @@ static bool Inject(const wchar_t* gameFull, const wchar_t* dllFull)
 #define IDC_VERREQ  104             // "requires v1.1.1.7 or v1.1.1.9", always the same words
 #define IDC_VERGOT  105             // what the exe on disk turned out to be
 #define IDC_LIST    106             // the scrolling viewport the checkboxes live in
-#define IDC_PLUGIN0 200
+#define IDC_WORKSHOP 107
+#define IDC_WORKSHOP_BROWSE 108
+#define IDC_PLUGIN 109
+#define IDC_PLUGIN_INI 110
+#define IDC_NON_STEAM 111
 
 #define LIST_CLASS  L"tesmiopluginlist"
-#define LIST_ROW    20              // one plugin row, 96 dpi
+#define LIST_ROW    24              // one plugin row, 96 dpi
 #define LIST_COLS   2
 #define LIST_MAXROW 8               // taller than this and it scrolls instead
 
 static HFONT   g_font;
 static HWND    g_path;
+static HWND    g_workshopPath;
 static HWND    g_hostBox;
 static HWND    g_verGot;
 static HWND    g_list;
@@ -1337,11 +1254,124 @@ static LRESULT CALLBACK ListProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 
 static void SyncPluginBoxes()
 {
-    // An API mismatch keeps a box disabled even with "Load plugins at all"
-    // checked - there is nothing a click could turn on, since LoadPlugins
-    // rejects it before Init regardless of the ini.
-    for (int i = 0; i < g_plugCount; i++)
-        EnableWindow(g_plug[i].box, (g_host && g_plug[i].apiOk) ? TRUE : FALSE);
+    for (const auto& entry : g_plug)
+        EnableWindow(entry.box, g_host);
+}
+
+static void PopulatePluginList()
+{
+    while (HWND child = GetWindow(g_list, GW_CHILD)) DestroyWindow(child);
+    const int rows = (static_cast<int>(g_plug.size()) + LIST_COLS - 1) / LIST_COLS;
+    g_listContent = rows * S(LIST_ROW);
+    g_listPos = 0;
+    ListSetScroll(g_list);
+
+    RECT client;
+    GetClientRect(g_list, &client);
+    const int colWidth = client.right / LIST_COLS;
+    const int gearWidth = S(22);
+    const int gearGap = S(4);
+    HDC dc = GetDC(g_list);
+    HGDIOBJ oldFont = dc && g_font ? SelectObject(dc, g_font) : nullptr;
+    for (size_t i = 0; i < g_plug.size(); ++i)
+    {
+        auto& entry = g_plug[i];
+        wchar_t note[64];
+        PluginSigNote(&entry, note, _countof(note), true);
+        std::wstring label = entry.file.file;
+        if (note[0]) label += std::wstring(L"  [") + note + L"]";
+
+        const int x = static_cast<int>(i % LIST_COLS) * colWidth;
+        const int y = static_cast<int>(i / LIST_COLS) * S(LIST_ROW);
+        const bool hasIni = Exists(entry.file.IniPath().c_str());
+        const int available = colWidth - S(8) - (hasIni ? gearWidth + gearGap : 0);
+        RECT labelBounds = {};
+        if (dc) DrawTextW(dc, label.c_str(), -1, &labelBounds, DT_SINGLELINE | DT_CALCRECT);
+        const int labelWidth = labelBounds.right + S(17);
+        const int checkWidth = dc && labelWidth < available ? labelWidth : available;
+        entry.box = ChildPx(g_list, L"BUTTON", label.c_str(),
+                            BS_AUTOCHECKBOX | BS_NOTIFY | WS_TABSTOP,
+                            x, y, checkWidth, S(21), IDC_PLUGIN);
+        SetWindowLongPtrW(entry.box, GWLP_USERDATA, static_cast<LONG_PTR>(i));
+        SendMessageW(entry.box, BM_SETCHECK, entry.on ? BST_CHECKED : BST_UNCHECKED, 0);
+
+        if (hasIni)
+        {
+            HWND settings = ChildPx(g_list, L"BUTTON", L"\u2699",
+                                    BS_NOTIFY | WS_TABSTOP, x + checkWidth + gearGap, y,
+                                    gearWidth, S(21), IDC_PLUGIN_INI);
+            SetWindowLongPtrW(settings, GWLP_USERDATA, static_cast<LONG_PTR>(i));
+        }
+    }
+    if (oldFont) SelectObject(dc, oldFont);
+    if (dc) ReleaseDC(g_list, dc);
+    if (g_plug.empty())
+        ChildPx(g_list, L"STATIC", L"No plugins found", 0, 0, 0, client.right, S(18), 0);
+    SyncPluginBoxes();
+    InvalidateRect(g_list, NULL, TRUE);
+}
+
+static int CALLBACK SelectWorkshopFolder(HWND dialog, UINT msg, LPARAM, LPARAM current)
+{
+    if (msg == BFFM_INITIALIZED && current)
+        SendMessageW(dialog, BFFM_SETSELECTIONW, TRUE, current);
+    return 0;
+}
+
+static bool RefreshWorkshopUi(HWND owner, bool showError)
+{
+    wchar_t typed[MAX_PATH];
+    GetWindowTextW(g_workshopPath, typed, _countof(typed));
+    const std::wstring input = typed;
+    const auto first = input.find_first_not_of(L" \"");
+    const auto last = input.find_last_not_of(L" \"");
+    std::wstring path = first == std::wstring::npos ? L"" : input.substr(first, last - first + 1);
+    if (!path.empty() && _wcsicmp(path.c_str(), g_workshopDefault.c_str()) != 0)
+    {
+        wchar_t full[MAX_PATH];
+        const DWORD len = GetFullPathNameW(path.c_str(), _countof(full), full, NULL);
+        if (!len || len >= _countof(full) || !DirExists(full))
+        {
+            if (showError)
+                MessageBoxW(owner, L"Choose an existing Workshop folder, or clear the field to use the default.",
+                            L"TesmioLoader", MB_OK | MB_ICONWARNING);
+            return false;
+        }
+        path = full;
+    }
+    g_workshopOverride = _wcsicmp(path.c_str(), g_workshopDefault.c_str()) == 0 ? L"" : path;
+    const std::wstring effective = EffectiveWorkshop();
+    if (effective != input) SetWindowTextW(g_workshopPath, effective.c_str());
+    if (_wcsicmp(effective.c_str(), g_scannedWorkshop.c_str()) != 0)
+    {
+        ScanPlugins();
+        PopulatePluginList();
+    }
+    return true;
+}
+
+static void BrowseWorkshop(HWND owner)
+{
+    const HRESULT com = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
+    wchar_t current[MAX_PATH];
+    GetWindowTextW(g_workshopPath, current, _countof(current));
+    BROWSEINFOW browse = {};
+    browse.hwndOwner = owner;
+    browse.lpszTitle = L"Choose the Workshop folder to scan for plugins";
+    browse.ulFlags = BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE;
+    browse.lpfn = SelectWorkshopFolder;
+    browse.lParam = reinterpret_cast<LPARAM>(current);
+    if (PIDLIST_ABSOLUTE item = SHBrowseForFolderW(&browse))
+    {
+        wchar_t path[MAX_PATH];
+        if (SHGetPathFromIDListW(item, path))
+        {
+            SetWindowTextW(g_workshopPath, path);
+            RefreshWorkshopUi(owner, true);
+        }
+        CoTaskMemFree(item);
+    }
+    if (SUCCEEDED(com)) CoUninitialize();
 }
 
 static void Browse(HWND owner)
@@ -1436,10 +1466,10 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         // unless the mismatch is obvious at a glance. A signature file that
         // does not verify gets the same red: the bytes changed after they
         // were signed, which is a stronger statement than "not from Tesmio".
-        for (int i = 0; i < g_plugCount; i++)
+        for (size_t i = 0; i < g_plug.size(); i++)
         {
             if (g_plug[i].box == ctl &&
-                (!g_plug[i].apiOk || g_plug[i].sig == TSM_SIG_BAD))
+                g_plug[i].sig == TSM_SIG_BAD)
             {
                 SetTextColor((HDC)wp, RGB(176, 0, 0));
                 break;
@@ -1464,6 +1494,16 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         // the check reads the whole 10 MB exe.
         if (id == IDC_PATH && HIWORD(wp) == EN_KILLFOCUS) { RefreshVersionUi(); return 0; }
 
+        if (id == IDC_NON_STEAM)
+        {
+            g_nonSteam = SendMessageW((HWND)lp, BM_GETCHECK, 0, 0) == BST_CHECKED;
+            wchar_t requirement[192];
+            VersionRequirementText(requirement, _countof(requirement));
+            SetDlgItemTextW(hwnd, IDC_VERREQ, requirement);
+            RefreshVersionUi();
+            return 0;
+        }
+
         if (id == IDC_HOST)
         {
             g_host = SendMessageW(g_hostBox, BM_GETCHECK, 0, 0) == BST_CHECKED;
@@ -1471,10 +1511,24 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
             return 0;
         }
 
-        if (id >= IDC_PLUGIN0 && id < IDC_PLUGIN0 + g_plugCount)
+        if (id == IDC_WORKSHOP_BROWSE) { BrowseWorkshop(hwnd); return 0; }
+        if (id == IDC_WORKSHOP && HIWORD(wp) == EN_KILLFOCUS)
         {
-            PluginEntry* e = &g_plug[id - IDC_PLUGIN0];
-            e->on = SendMessageW(e->box, BM_GETCHECK, 0, 0) == BST_CHECKED;
+            RefreshWorkshopUi(hwnd, false);
+            return 0;
+        }
+        if ((id == IDC_PLUGIN || id == IDC_PLUGIN_INI) && HIWORD(wp) == BN_CLICKED)
+        {
+            const auto index = static_cast<size_t>(GetWindowLongPtrW((HWND)lp, GWLP_USERDATA));
+            if (index >= g_plug.size()) return 0;
+            auto& entry = g_plug[index];
+            if (id == IDC_PLUGIN)
+            {
+                entry.on = SendMessageW(entry.box, BM_GETCHECK, 0, 0) == BST_CHECKED;
+                g_pluginChoices[entry.file.key] = entry.on;
+            }
+            else
+                tsm::EditPluginIni(hwnd, entry.file.IniPath(), g_font, g_dpi);
             return 0;
         }
 
@@ -1482,6 +1536,7 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 
         if (id == IDC_LAUNCH)
         {
+            if (!RefreshWorkshopUi(hwnd, true)) return 0;
             wchar_t game[MAX_PATH];
             if (!ResolveEdit(game, _countof(game)))
             {
@@ -1527,7 +1582,11 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
                 return 0;
             }
 
-            SaveConfig(game);
+            if (!SaveConfig(game))
+            {
+                MessageBoxW(hwnd, L"Could not save tesmioloader.ini.", L"TesmioLoader", MB_OK | MB_ICONERROR);
+                return 0;
+            }
 
             ShowWindow(hwnd, SW_HIDE);
             if (Inject(game, g_dllFull))
@@ -1583,7 +1642,7 @@ static void DetectDpi()
 
 static bool ShowWindowUi(const wchar_t* gameFull)
 {
-    INITCOMMONCONTROLSEX icc = { sizeof(icc), ICC_STANDARD_CLASSES };
+    INITCOMMONCONTROLSEX icc = { sizeof(icc), ICC_STANDARD_CLASSES | ICC_BAR_CLASSES };
     InitCommonControlsEx(&icc);
 
     {
@@ -1657,15 +1716,16 @@ static bool ShowWindowUi(const wchar_t* gameFull)
     // Rows, then how many of them fit. The count no longer sets the window
     // height: two columns halve it and the rest is scrolled, so a machine with
     // 32 plugins gets the same window as one with two.
-    int listRows = (g_plugCount + LIST_COLS - 1) / LIST_COLS;
+    int listRows = (static_cast<int>(g_plug.size()) + LIST_COLS - 1) / LIST_COLS;
     if (listRows < 1) listRows = 1;
 
     int shownRows = listRows < LIST_MAXROW ? listRows : LIST_MAXROW;
 
     // Everything except the list, in 96-dpi units, so the cap can be lowered
     // again on a screen that would not take even LIST_MAXROW rows.
-    const int fixedH = pad + 18 + rowH + pad + lineH + lineH + pad
-                     + (18 + rowH + 12) + pad + lineH + pad + btnH + pad;
+    const int pathGap = 4;
+    const int fixedH = pad + 20 + 2 * rowH + pathGap + pad + 2 * lineH + pad
+                     + (18 + rowH + 6 + 12) + pad + lineH + pad + btnH + pad;
     {
         RECT frame = { 0, 0, S(W), S(fixedH) };
         AdjustWindowRect(&frame, WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU, FALSE);
@@ -1682,11 +1742,12 @@ static bool ShowWindowUi(const wchar_t* gameFull)
 
     const int listW   = W - 2 * pad - 24;
     const int listH   = shownRows * LIST_ROW;
-    const int groupH  = 18 + rowH + listH + 12;
+    const int groupH  = 18 + rowH + 6 + listH + 12;
 
     int y = pad;
-    const int labelY  = y;                      y += 18;
-    const int pathY   = y;                      y += rowH + pad;
+    const int labelY  = y;                      y += 20;
+    const int pathY   = y;                      y += rowH + pathGap;
+    const int workshopPathY = y;               y += rowH + pad;
     const int verReqY = y;                      y += lineH;
     const int verGotY = y;                      y += lineH + pad;
     const int groupY  = y;                      y += groupH + pad;
@@ -1701,8 +1762,10 @@ static bool ShowWindowUi(const wchar_t* gameFull)
     int cy = (GetSystemMetrics(SM_CYSCREEN) - winH) / 2;
 
     wchar_t windowTitle[128];
-    _snwprintf_s(windowTitle, _countof(windowTitle), _TRUNCATE,
-                 L"tesmioloader v. %s", g_version);
+    if (g_version[0])
+        _snwprintf_s(windowTitle, _countof(windowTitle), _TRUNCATE, L"tesmioloader v. %s", g_version);
+    else
+        wcscpy_s(windowTitle, L"TesmioLoader");
 
     HWND hwnd = CreateWindowExW(WS_EX_CONTROLPARENT, wc.lpszClassName,
                                 windowTitle, WS_OVERLAPPED | WS_CAPTION |
@@ -1710,12 +1773,24 @@ static bool ShowWindowUi(const wchar_t* gameFull)
                                 cx, cy, winW, winH, NULL, NULL, inst, NULL);
     if (!hwnd) { Fail(L"CreateWindowEx"); return false; }
 
-    Child(hwnd, L"STATIC", L"Game executable", 0, pad, labelY, W - 2 * pad, 16, 0);
+    const int nonSteamW = 132;
+    Child(hwnd, L"STATIC", L"Game executable & Workshop plugin folder", SS_NOPREFIX,
+          pad, labelY + 2, W - 2 * pad - nonSteamW - 6, 16, 0);
+    HWND nonSteamBox = Child(hwnd, L"BUTTON", L"Non-Steam version", BS_AUTOCHECKBOX | WS_TABSTOP,
+                             W - pad - nonSteamW, labelY, nonSteamW, 18, IDC_NON_STEAM);
+    SendMessageW(nonSteamBox, BM_SETCHECK, g_nonSteam ? BST_CHECKED : BST_UNCHECKED, 0);
 
     g_path = Child(hwnd, L"EDIT", gameFull, WS_BORDER | WS_TABSTOP | ES_AUTOHSCROLL,
                    pad, pathY, W - 2 * pad - btnW - 6, rowH, IDC_PATH);
     Child(hwnd, L"BUTTON", L"Browse...", WS_TABSTOP,
           W - pad - btnW, pathY, btnW, rowH, IDC_BROWSE);
+
+    g_workshopPath = Child(hwnd, L"EDIT", EffectiveWorkshop().c_str(),
+                           WS_BORDER | WS_TABSTOP | ES_AUTOHSCROLL,
+                           pad, workshopPathY, W - 2 * pad - btnW - 6, rowH, IDC_WORKSHOP);
+    SendMessageW(g_workshopPath, EM_SETLIMITTEXT, MAX_PATH - 1, 0);
+    Child(hwnd, L"BUTTON", L"Browse...", WS_TABSTOP,
+          W - pad - btnW, workshopPathY, btnW, rowH, IDC_WORKSHOP_BROWSE);
 
     // Two lines about the version, and the first one never changes: which build
     // this launcher is for has to be readable even when nothing is wrong with
@@ -1753,62 +1828,19 @@ static bool ShowWindowUi(const wchar_t* gameFull)
     Child(hwnd, L"BUTTON", L"Plugins", BS_GROUPBOX | WS_CLIPSIBLINGS,
           pad, groupY, W - 2 * pad, groupH, 0);
 
-    g_hostBox = Child(hwnd, L"BUTTON", L"Load plugins at all",
+    g_hostBox = Child(hwnd, L"BUTTON", L"All plugins",
                       BS_AUTOCHECKBOX | WS_TABSTOP,
                       pad + 12, groupY + 18, W - 2 * pad - 24, rowH - 2, IDC_HOST);
     SendMessageW(g_hostBox, BM_SETCHECK, g_host ? BST_CHECKED : BST_UNCHECKED, 0);
 
     g_list = CreateWindowExW(WS_EX_CONTROLPARENT, LIST_CLASS, NULL,
                              WS_CHILD | WS_VISIBLE | WS_VSCROLL,
-                             S(pad + 12), S(groupY + 18 + rowH), S(listW), S(listH),
+                             S(pad + 12), S(groupY + 18 + rowH + 6), S(listW), S(listH),
                              hwnd, (HMENU)(INT_PTR)IDC_LIST, inst, NULL);
     if (!g_list) { Fail(L"CreateWindowEx(list)"); return false; }
 
-    // The scroll bar has to be settled before the client width is measured -
-    // when it is showing it takes its width out of the client area, and the two
-    // columns are laid out in what is left.
-    g_listContent = listRows * S(LIST_ROW);
-    g_listView    = S(listH);
-    g_listPos     = 0;
-    ListSetScroll(g_list);
-
-    RECT lr;
-    GetClientRect(g_list, &lr);
-    const int colW = lr.right / LIST_COLS;
-
-    for (int i = 0; i < g_plugCount; i++)
-    {
-        PluginEntry* e = &g_plug[i];
-
-        wchar_t note[192];
-        PluginNote(e, note, _countof(note), true);
-
-        wchar_t label[256];
-        if (note[0])
-            _snwprintf_s(label, _countof(label), _TRUNCATE, L"%s  [%s]", e->file, note);
-        else
-            wcscpy_s(label, _countof(label), e->file);
-
-        // Row-major: 0 and 1 share the top row, 2 and 3 the next. Filling one
-        // column and then the other would read better in a list that never
-        // scrolls, but here the two halves would slide past each other.
-        int col = i % LIST_COLS;
-        int row = i / LIST_COLS;
-
-        // BS_NOTIFY, or a button never sends BN_SETFOCUS at all and ListReveal
-        // is dead code - tab traversal would then park the focus on a row
-        // scrolled out of sight.
-        e->box = ChildPx(g_list, L"BUTTON", label,
-                         BS_AUTOCHECKBOX | BS_NOTIFY | WS_TABSTOP,
-                         col * colW, row * S(LIST_ROW), colW - S(6), S(18),
-                         IDC_PLUGIN0 + i);
-        SendMessageW(e->box, BM_SETCHECK, e->on ? BST_CHECKED : BST_UNCHECKED, 0);
-    }
-    if (!g_plugCount)
-        ChildPx(g_list, L"STATIC", L"none found - is build\\plugins\\ there?", 0,
-                0, 0, lr.right, S(18), 0);
-
-    SyncPluginBoxes();
+    g_listView = S(listH);
+    PopulatePluginList();
 
     // SS_NOPREFIX here too: the status line carries paths, and a folder with an
     // & in its name would lose it.
@@ -1893,14 +1925,18 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
     wcscpy_s(dllDir, MAX_PATH, g_dllFull);
     ToParent(dllDir);
     SetIniPath(dllDir);
+    if (!findOnly && !Exists(g_ini) && !CreateDefaultConfig())
+    {
+        Fail(L"CreateDefaultConfig");
+        if (gui) MessageBoxW(NULL, g_log, L"TesmioLoader", MB_OK | MB_ICONERROR);
+        return 1;
+    }
     ReadConfig();
 
     // After ReadConfig, so the flag wins over the ini rather than the other way
     // round - it is the more deliberate of the two.
     if (ignoreVersion) g_versionCheck = false;
-    if (!g_versionCheck) Msg(L"version check off - any build will be injected into");
-
-    ScanPlugins(dllDir);
+    if (!EnforceGameVersion()) Msg(L"version check off - any build will be injected into");
 
     // --- the game, in order of how much the user meant it.
     wchar_t found[MAX_PATH] = {0};
@@ -1927,8 +1963,13 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
     if (!found[0] && FindNearSelf(selfDir, found, MAX_PATH))
         Msg(L"found by walking up from %s", selfDir);
 
-    if (!found[0] && FindViaSteam(found, MAX_PATH))
+    if (!found[0] && !g_nonSteam && FindViaSteam(found, MAX_PATH))
         Msg(L"found through Steam");
+
+    if (!findOnly && !CreateDirectoryW(g_localPlugins.c_str(), NULL) &&
+        !DirExists(g_localPlugins.c_str()))
+        Fail(L"CreateDirectory(plugins)");
+    ScanPlugins();
 
     // Nothing written, nothing started - the only way to see what the four
     // strategies resolved to, since the winner is the only one that leaves a
@@ -1938,22 +1979,15 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
         Msg(L"dpi    %d", g_dpi);
         Msg(L"ini    %s", g_ini);
         Msg(L"dll    %s%s", g_dllFull, Exists(g_dllFull) ? L"" : L"   (missing)");
-        for (int i = 0; i < g_plugCount; i++)
+        if (g_version[0]) Msg(L"loader %s", g_version);
+        Msg(L"workshop %s", g_scannedWorkshop.c_str());
+        for (const auto& entry : g_plug)
         {
-            wchar_t note[192];
-            PluginNote(&g_plug[i], note, _countof(note), false);
-            if (note[0])
-                Msg(L"plugin %-20s %-3s   [%s]", g_plug[i].file,
-                    g_plug[i].on ? L"on" : L"off", note);
-            else
-                Msg(L"plugin %-20s %s", g_plug[i].file,
-                    g_plug[i].on ? L"on" : L"off");
+            wchar_t note[96];
+            PluginSigNote(&entry, note, _countof(note), false);
+            Msg(L"plugin %-3s %s %s", entry.on ? L"on" : L"off",
+                entry.file.path.c_str(), note);
         }
-        Msg(L"api    %u..%u", TSM_API_VERSION_MIN, TSM_API_VERSION);
-        Msg(L"game   %s", found[0] ? found : L"NOT FOUND");
-
-        // Not "where" but "what", and the only line here that can veto the
-        // rest: --find exits 2 when the game it found would not be launched.
         // GameVersionOf prints what it read; this says what was wanted.
         for (size_t i = 0; i < GAME_VER_COUNT; i++)
             Msg(L"needs  v%s (build %08X)", kSupportedVersions[i].text,
@@ -1988,6 +2022,10 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
         return 2;
     }
 
-    SaveConfig(found);
+    if (!SaveConfig(found))
+    {
+        Fail(L"SaveConfig");
+        return 1;
+    }
     return Inject(found, g_dllFull) ? 0 : 1;
 }

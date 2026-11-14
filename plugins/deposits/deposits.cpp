@@ -166,7 +166,7 @@ static bool KeyIs(const char* line, const char* want) { return _stricmp(line, wa
 static void LoadDepositRegistry()
 {
     char path[MAX_PATH];
-    _snprintf_s(path, sizeof(path), _TRUNCATE, "%s\\plugins\\deposits.ini", g_baseDir);
+    _snprintf_s(path, sizeof(path), _TRUNCATE, "%s\\deposits.ini", H->pluginDir);
 
     HANDLE h = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ, NULL,
                            OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);

@@ -1,5 +1,20 @@
 ## Changelog
 
+*v0.4.2*
+
+- The launcher writes its build version into `tesmioloader.ini` when it creates the file. The window title reads the version from the INI.
+
+*v0.4.1*
+
+- The plugin settings window is a vertical form. Edit each value directly in its row and hover over `(?)` to read its INI comment.
+
+*v0.4.0*
+
+- Run the launcher from the game directory. It creates a default `tesmioloader.ini` and a local `plugins` directory on the first launch.
+- Detect plugins recursively in Steam Workshop. The launcher lets you choose a different Workshop folder. Local DLLs take precedence when their names match.
+- Open a plugin's settings with the gear beside its name. Edit values by section and hover over `(?)` to read the preceding INI comments.
+- Enable **Non-Steam version** to skip Steam discovery and the launcher's game version gate for standalone installations.
+
 ---
 
 *Update! - v. b0.3.7*

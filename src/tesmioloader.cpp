@@ -1156,22 +1156,24 @@ static bool ReadablePtr(const void* p, size_t n)
 // feature can be written, rebuilt and removed without touching this file, and
 // that shipping one is copying a DLL.
 
-#include "tesmio_api.h"
-
-#define MAX_PLUGINS 32
+#include "tesmio_discovery.h"
 
 struct LoadedPlugin
 {
     HMODULE          module;
-    char             file[64];
+    char             file[MAX_PATH * 3];
+    wchar_t          key[MAX_PATH];
+    wchar_t          ini[MAX_PATH];
+    char             directory[MAX_PATH * 3];
+    TsmHost          host;
     const char*      name;
     const char*      version;
     TsmPluginStartFn start;      // optional second phase; null when absent
 };
-static LoadedPlugin g_plugin[MAX_PLUGINS];
+static std::vector<LoadedPlugin> g_plugin;
 static int          g_pluginCount;
 static int          g_plugins = 1;
-static char         g_pluginDir[MAX_PATH];
+static wchar_t      g_iniPathWide[MAX_PATH];
 
 // --- the host table -------------------------------------------------------
 //
@@ -1212,29 +1214,88 @@ static long api_FaultFilter(const char* what, void* ep)
     return FaultFilter(what, (PEXCEPTION_POINTERS)ep);
 }
 
-static void api_IniPath(const char* iniName, char* out, size_t n)
+static void WCToAnsiPath(const wchar_t* path, char* out, int size)
 {
-    _snprintf_s(out, n, _TRUNCATE, "%s\\%s", g_baseDir, iniName ? iniName : "tesmioloader.ini");
+    BOOL substituted = FALSE;
+    const bool utf8 = GetACP() == CP_UTF8;
+    if (!WideCharToMultiByte(CP_ACP, utf8 ? 0 : WC_NO_BEST_FIT_CHARS,
+                             path, -1, out, size, NULL, utf8 ? NULL : &substituted) ||
+        substituted)
+        out[0] = 0;
+}
+
+static const LoadedPlugin* FindPlugin(const wchar_t* key)
+{
+    for (int i = 0; i < g_pluginCount; ++i)
+        if (_wcsicmp(g_plugin[i].key, key) == 0) return &g_plugin[i];
+    return nullptr;
+}
+
+static void api_IniPath(const char* iniName, wchar_t* out, size_t n)
+{
+    wchar_t name[MAX_PATH] = L"tesmioloader.ini";
+    if (iniName && !MultiByteToWideChar(CP_ACP, 0, iniName, -1, name, _countof(name)))
+    {
+        *out = 0;
+        return;
+    }
+    const wchar_t* leaf = name;
+    if (_wcsnicmp(leaf, L"plugins\\", 8) == 0 || _wcsnicmp(leaf, L"plugins/", 8) == 0)
+        leaf += 8;
+    const wchar_t* ext = wcsrchr(leaf, L'.');
+    if (ext && _wcsicmp(ext, L".ini") == 0 && !wcschr(leaf, L'\\') && !wcschr(leaf, L'/'))
+    {
+        wchar_t key[MAX_PATH];
+        wcsncpy_s(key, leaf, ext - leaf);
+        if (const auto* plugin = FindPlugin(key))
+        {
+            wcscpy_s(out, n, plugin->ini);
+            return;
+        }
+    }
+    const std::wstring path = tsm::JoinPath(tsm::Parent(g_iniPathWide), name);
+    wcsncpy_s(out, n, path.c_str(), _TRUNCATE);
 }
 
 static int api_ConfigInt(const char* iniName, const char* section,
                          const char* key, int fallback)
 {
-    char ini[MAX_PATH];
-    api_IniPath(iniName, ini, sizeof(ini));
-    return GetPrivateProfileIntA(section, key, fallback, ini);
+    wchar_t ini[MAX_PATH], sectionW[MAX_PATH], keyW[MAX_PATH];
+    api_IniPath(iniName, ini, _countof(ini));
+    if (!MultiByteToWideChar(CP_ACP, 0, section, -1, sectionW, _countof(sectionW)) ||
+        !MultiByteToWideChar(CP_ACP, 0, key, -1, keyW, _countof(keyW)))
+        return fallback;
+    return GetPrivateProfileIntW(sectionW, keyW, fallback, ini);
 }
 
 static int api_ConfigString(const char* iniName, const char* section,
                             const char* key, char* out, int outSize,
                             const char* fallback)
 {
-    char ini[MAX_PATH];
-    api_IniPath(iniName, ini, sizeof(ini));
-    DWORD n = GetPrivateProfileStringA(section, key, fallback ? fallback : "",
-                                       out, (DWORD)outSize, ini);
+    if (outSize <= 0) return 0;
+    wchar_t ini[MAX_PATH];
+    api_IniPath(iniName, ini, _countof(ini));
+    char ansi[MAX_PATH];
+    WCToAnsiPath(ini, ansi, _countof(ansi));
+    if (ansi[0])
+    {
+        GetPrivateProfileStringA(section, key, fallback ? fallback : "",
+                                 out, outSize, ansi);
+    }
+    else
+    {
+        wchar_t sectionW[MAX_PATH], keyW[MAX_PATH];
+        std::vector<wchar_t> value(outSize);
+        if (!MultiByteToWideChar(CP_ACP, 0, section, -1, sectionW, _countof(sectionW)) ||
+            !MultiByteToWideChar(CP_ACP, 0, key, -1, keyW, _countof(keyW)))
+            value[0] = 0;
+        else
+            GetPrivateProfileStringW(sectionW, keyW, L"", value.data(), outSize, ini);
+        if (!value[0] || !WideCharToMultiByte(CP_ACP, 0, value.data(), -1, out, outSize, NULL, NULL))
+            strncpy_s(out, outSize, fallback ? fallback : "", _TRUNCATE);
+    }
     Trim(out);
-    return (int)n;
+    return (int)strlen(out);
 }
 
 // --- the service noticeboard ----------------------------------------------
@@ -1307,7 +1368,6 @@ static void BuildHostTable()
     g_host.exeSize      = g_exeSize;
     g_host.engineModule = (void*)GetModuleHandleA(DLL_ENGINE);
     g_host.baseDir      = g_baseDir;
-    g_host.pluginDir    = g_pluginDir;
     g_host.vfsRoot      = g_vfsRoot;
 
     g_host.log               = Logf;
@@ -1330,45 +1390,20 @@ static void BuildHostTable()
 // launcher's checkboxes write, and the reason the choice is a config key rather
 // than a renamed file: a plugin the user turned off is still on disk, still
 // listed by the launcher, and still one keystroke from coming back.
-static bool PluginEnabled(const char* file)
+static bool PluginLoaded(const wchar_t* key)
 {
-    char key[64];
-    strncpy_s(key, sizeof(key), file, _TRUNCATE);
-    if (char* dot = strrchr(key, '.')) *dot = 0;
-
-    return GetPrivateProfileIntA("plugins", key, 1, g_iniPath) != 0;
+    return FindPlugin(key) != nullptr;
 }
 
-// The loaded list, keyed the same way PluginEnabled is - the file name
-// without its extension. A DLL deleted from disk and one switched off in the
-// launcher look identical from here, which is exactly right for the save
-// manifest: either way the content is not in the game.
-static bool PluginLoaded(const char* key)
+static void LoadOnePlugin(const tsm::PluginFile& candidate, const wchar_t* iniPath,
+                          const wchar_t* directory)
 {
-    for (int i = 0; i < g_pluginCount; i++)
-    {
-        char file[64];
-        strncpy_s(file, sizeof(file), g_plugin[i].file, _TRUNCATE);
-        if (char* dot = strrchr(file, '.')) *dot = 0;
-        if (_stricmp(file, key) == 0) return true;
-    }
-    return false;
-}
-
-static void LoadOnePlugin(const char* file)
-{
-    if (g_pluginCount >= MAX_PLUGINS)
-    {
-        Logf("plugin   \"%s\" skipped - only %d fit", file, MAX_PLUGINS);
-        return;
-    }
-
-    char path[MAX_PATH];
-    _snprintf_s(path, sizeof(path), _TRUNCATE, "%s\\%s", g_pluginDir, file);
+    char file[MAX_PATH * 3] = {};
+    WideCharToMultiByte(CP_UTF8, 0, candidate.file.c_str(), -1, file, _countof(file), NULL, NULL);
 
     // The full path, and LOAD_WITH_ALTERED_SEARCH_PATH so a plugin's own
     // dependencies resolve next to it rather than out of the game folder.
-    HMODULE mod = LoadLibraryExA(path, NULL, LOAD_WITH_ALTERED_SEARCH_PATH);
+    HMODULE mod = LoadLibraryExW(candidate.path.c_str(), NULL, LOAD_WITH_ALTERED_SEARCH_PATH);
     if (!mod)
     {
         Logf("plugin   \"%s\" failed to load (%lu)", file, GetLastError());
@@ -1415,9 +1450,16 @@ static void LoadOnePlugin(const char* file)
 
     // Reserved before Init runs, so anything the plugin publishes is credited
     // to it in the log.
-    LoadedPlugin* p = &g_plugin[g_pluginCount];
+    LoadedPlugin* p = &g_plugin[g_pluginCount++];
     memset(p, 0, sizeof(*p));
     p->module = mod;
+    wcscpy_s(p->key, candidate.key.c_str());
+    wcscpy_s(p->ini, iniPath);
+    WCToAnsiPath(directory, p->directory, _countof(p->directory));
+    if (!p->directory[0])
+        WideCharToMultiByte(CP_UTF8, 0, directory, -1, p->directory, _countof(p->directory), NULL, NULL);
+    p->host = g_host;
+    p->host.pluginDir = p->directory;
     strncpy_s(p->file, sizeof(p->file), file, _TRUNCATE);
     p->name    = p->file;
     p->version = "";
@@ -1426,7 +1468,7 @@ static void LoadOnePlugin(const char* file)
     TsmPluginInfo info;
     memset(&info, 0, sizeof(info));
     int rc = 1;
-    __try { rc = init(&g_host, &info); }
+    __try { rc = init(&p->host, &info); }
     __except (FaultFilter("plugin init", GetExceptionInformation())) { rc = 1; }
     g_currentPlugin = "?";
 
@@ -1440,14 +1482,13 @@ static void LoadOnePlugin(const char* file)
         // freed memory. Any service it published points into the DLL, so those
         // go too, which is why FreeLibrary only happens on this path.
         Logf("plugin   \"%s\" declined to install (%d)", file, rc);
+        --g_pluginCount;
         FreeLibrary(mod);
         return;
     }
 
     p->start = (TsmPluginStartFn)GetProcAddress(mod, TSM_EXPORT_START);
-    g_pluginCount++;
-
-    Logf("plugin   %-16s %-8s from %s", p->name, p->version, file);
+    Logf("plugin   %-16s %-8s from %ls", p->name, p->version, candidate.path.c_str());
 }
 
 // Second phase. Every plugin's Init has run, so every service that will ever
@@ -1471,42 +1512,27 @@ static void StartPlugins()
 
 static void LoadPlugins()
 {
-    _snprintf_s(g_pluginDir, sizeof(g_pluginDir), _TRUNCATE, "%s\\plugins", g_baseDir);
-
-    DWORD attr = GetFileAttributesA(g_pluginDir);
-    if (attr == INVALID_FILE_ATTRIBUTES || !(attr & FILE_ATTRIBUTE_DIRECTORY))
-    {
-        Logf("plugin   no plugins folder at %s", g_pluginDir);
-        return;
-    }
-
+    const std::wstring base = tsm::ModuleDir(g_self);
+    if (base.empty()) return;
+    const auto local = tsm::JoinPath(base, L"plugins");
+    CreateDirectoryW(local.c_str(), NULL);
+    auto workshop = tsm::ReadWorkshopOverride(g_iniPathWide);
+    if (workshop.empty()) workshop = tsm::WorkshopDefault(base);
+    const auto candidates = tsm::DiscoverPlugins(local, workshop);
+    g_plugin.resize(candidates.size());
     BuildHostTable();
-
-    char pattern[MAX_PATH];
-    _snprintf_s(pattern, sizeof(pattern), _TRUNCATE, "%s\\*.dll", g_pluginDir);
-
-    WIN32_FIND_DATAA fd;
-    HANDLE h = FindFirstFileA(pattern, &fd);
-    if (h == INVALID_HANDLE_VALUE)
+    for (const auto& candidate : candidates)
     {
-        Logf("plugin   no plugins in %s", g_pluginDir);
-        return;
-    }
-
-    // Alphabetical, which is what FindFirstFile gives on NTFS - so a plugin
-    // that has to run before another can be named for it.
-    do
-    {
-        if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
-        if (!PluginEnabled(fd.cFileName))
+        if (!GetPrivateProfileIntW(L"plugins", candidate.key.c_str(), 1, g_iniPathWide))
         {
-            Logf("plugin   %-16s off in tesmioloader.ini [plugins]", fd.cFileName);
+            Logf("plugin   %ls off in tesmioloader.ini [plugins]", candidate.file.c_str());
             continue;
         }
-        LoadOnePlugin(fd.cFileName);
-    } while (FindNextFileA(h, &fd));
-    FindClose(h);
-
+        const auto ini = candidate.IniPath();
+        const auto dir = tsm::Parent(candidate.path);
+        if (ini.size() < MAX_PATH)
+            LoadOnePlugin(candidate, ini.c_str(), dir.c_str());
+    }
     StartPlugins();
     Logf("plugin   %d loaded", g_pluginCount);
 }
@@ -1575,6 +1601,15 @@ static bool IniHasKey(const char* ini, const char* section, const char* key)
     return buf[0] != '\x1';
 }
 
+static void ManifestPluginIni(const char* key, char (&out)[MAX_PATH])
+{
+    char relative[MAX_PATH];
+    _snprintf_s(relative, _countof(relative), _TRUNCATE, "plugins\\%s.ini", key);
+    wchar_t path[MAX_PATH];
+    api_IniPath(relative, path, _countof(path));
+    WCToAnsiPath(path, out, _countof(out));
+}
+
 // The `out` folder of plugins\buildings.ini, or the default the plugin uses.
 static void BuildingsOutDir(const char* ini, char* out, size_t n)
 {
@@ -1615,10 +1650,10 @@ static void WriteSaveManifest(const char* saveDir)
     // Mod resources. Only real when the plugin that injects them is on: a
     // save written with it off contains none of them, and writing the names
     // anyway would cry wolf on every later load.
-    if (PluginLoaded("resources"))
+    if (PluginLoaded(L"resources"))
     {
         char ini[MAX_PATH];
-        api_IniPath("plugins\\resources.ini", ini, sizeof(ini));
+        ManifestPluginIni("resources", ini);
         char buf[8192];
         DWORD r = GetPrivateProfileSectionA("list", buf, sizeof(buf), ini);
         if (r && r < sizeof(buf) - 2)
@@ -1633,10 +1668,10 @@ static void WriteSaveManifest(const char* saveDir)
 
     // Mod deposits, by section name - the deposit type number is what the
     // save's maps and mines key on, and the name is its human spelling.
-    if (PluginLoaded("deposits"))
+    if (PluginLoaded(L"deposits"))
     {
         char ini[MAX_PATH];
-        api_IniPath("plugins\\deposits.ini", ini, sizeof(ini));
+        ManifestPluginIni("deposits", ini);
         char names[4096];
         DWORD r = GetPrivateProfileSectionNamesA(names, sizeof(names), ini);
         if (r && r < sizeof(names) - 2)
@@ -1650,7 +1685,7 @@ static void WriteSaveManifest(const char* saveDir)
     // load either way, so the folder on disk is the only honest test.
     {
         char ini[MAX_PATH];
-        api_IniPath("plugins\\buildings.ini", ini, sizeof(ini));
+        ManifestPluginIni("buildings", ini);
         char names[4096];
         DWORD r = GetPrivateProfileSectionNamesA(names, sizeof(names), ini);
         if (r && r < sizeof(names) - 2)
@@ -1720,8 +1755,8 @@ static void CheckSaveManifest(const char* saveDir)
         if (r)
         {
             char ini[MAX_PATH];
-            api_IniPath("plugins\\resources.ini", ini, sizeof(ini));
-            bool on = PluginLoaded("resources");
+            ManifestPluginIni("resources", ini);
+            bool on = PluginLoaded(L"resources");
             for (char* p = buf; *p; p += strlen(p) + 1)
             {
                 char* eq = strchr(p, '=');
@@ -1745,8 +1780,8 @@ static void CheckSaveManifest(const char* saveDir)
         if (r)
         {
             char ini[MAX_PATH];
-            api_IniPath("plugins\\deposits.ini", ini, sizeof(ini));
-            bool on = PluginLoaded("deposits");
+            ManifestPluginIni("deposits", ini);
+            bool on = PluginLoaded(L"deposits");
             for (char* p = buf; *p; p += strlen(p) + 1)
             {
                 char* eq = strchr(p, '=');
@@ -1770,7 +1805,7 @@ static void CheckSaveManifest(const char* saveDir)
         if (r)
         {
             char ini[MAX_PATH];
-            api_IniPath("plugins\\buildings.ini", ini, sizeof(ini));
+            ManifestPluginIni("buildings", ini);
             char gameDir[MAX_PATH];
             bool haveGame = GameDirOf(saveDir, gameDir, sizeof(gameDir));
             char outDir[256];
@@ -2010,6 +2045,8 @@ static void Init()
     ResolveVfsRoot();
     _snprintf_s(g_iniPath, sizeof(g_iniPath), _TRUNCATE, "%s\\tesmioloader.ini", g_baseDir);
 
+    const auto wideIni = tsm::JoinPath(tsm::ModuleDir(g_self), L"tesmioloader.ini");
+    wcsncpy_s(g_iniPathWide, wideIni.c_str(), _TRUNCATE);
     ReadConfig();
 
     g_hLog = OpenLog("tesmioloader.log");

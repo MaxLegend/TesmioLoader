@@ -22,10 +22,16 @@ call "%VCVARS%" >nul
 if errorlevel 1 ( echo [build] vcvars failed & exit /b 1 )
 
 cd /d "%~dp0"
+set "TSM_RELEASE_VERSION="
+for /f "tokens=2 delims== " %%V in ('findstr /b /r /c:"version *=" tesmioloader.ini') do set "TSM_RELEASE_VERSION=%%V"
+if not defined TSM_RELEASE_VERSION (
+    echo [build] version is missing from tesmioloader.ini
+    exit /b 1
+)
 if not exist build mkdir build
 
 echo [build] tesmioloader.dll
-cl /nologo /O2 /MT /W3 /EHsc /LD ^
+cl /nologo /O2 /MT /W3 /EHsc /std:c++17 /LD ^
    /Fo"build\\" /Fd"build\\" /Fe"build\tesmioloader.dll" ^
    src\tesmioloader.cpp /link kernel32.lib
 if errorlevel 1 ( echo [build] tesmioloader.dll FAILED & exit /b 1 )
@@ -51,7 +57,7 @@ if exist build\tesmiolauncher.res (
     set LAUNCHER_RES=
     echo [build] rc.exe unavailable - launcher built without its icon
 )
-cl /nologo /O2 /MT /W3 /EHsc ^
+cl /nologo /O2 /MT /W3 /EHsc /std:c++17 "/DTSM_RELEASE_VERSION=%TSM_RELEASE_VERSION%" ^
    /Fo"build\\" /Fd"build\\" /Fe"build\tesmiolauncher.exe" ^
    src\tesmiolauncher.cpp %LAUNCHER_RES% /link /SUBSYSTEM:WINDOWS /MANIFEST:EMBED kernel32.lib
 if errorlevel 1 ( echo [build] tesmiolauncher.exe FAILED & exit /b 1 )
