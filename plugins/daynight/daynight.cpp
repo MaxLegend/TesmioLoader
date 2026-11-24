@@ -170,27 +170,27 @@
 
 // The weather and day/night state machine. Called once per tick with the world
 // object in rcx and a "this is a fresh world" flag in dl.
-#define RVA_WEATHER_TICK  0x333B50   // v1.1.1.13; was 0x333BD0
+#define RVA_WEATHER_TICK  0x352540     // v1.2.0.8; was 0x333B50
 
 // How lit the world is, 0..1. Pure, reads five fields of the world object and
 // returns a float in xmm0.
-#define RVA_LIGHT_FACTOR  0x5CFBD0   // v1.1.1.13; was 0x5CFC40
+#define RVA_LIGHT_FACTOR  0x5F7440     // v1.2.0.8; was 0x5CFBD0
 
 // `char IsSnowSeason(world)` - reads world+0x590 and the climate out of the
 // settings object, and answers whether that day of the year is in the snow
 // part of it. Called by the weather tick, which is why the shadowed date has
 // to agree with the real one about it.
-#define RVA_SNOW_SEASON   0x334360   // v1.1.1.13; was 0x3343E0
+#define RVA_SNOW_SEASON   0x352D60     // v1.2.0.8; was 0x334360
 
 // The C3D_TIMER every simulation rate in the game is integrated from. Only
 // touched in `slow = world` mode.
-#define RVA_SIM_TIMER     0x9D4EE0
+#define RVA_SIM_TIMER     0xA1EEF0   // v1.2.0.8; was 0x9D4EE0
 
 // In the day tick: `lea rcx,[sim timer]` / `xor r9d,r9d` / `xor r8d,r8d` /
 // `call qword ptr [PowerTime]`. Verified as a unit, because between them those
 // bytes prove that 0x9D4EE0 is a C3D_TIMER and that this call is on it -
 // needed only to confirm `slow = world` is scaling the right object.
-#define RVA_DAYTICK_POWER 0x334A20   // v1.1.1.13; was 0x334AA0
+#define RVA_DAYTICK_POWER 0x353450     // v1.2.0.8; was 0x334A20
 
 // The three per-calendar-day passes that integrate real elapsed time rather
 // than just bookkeeping the date, and so are the ones that desynchronise from
@@ -202,18 +202,18 @@
 // game itself would not eventually have made. Resolved and called directly,
 // like the snow-season test - never hooked, because nothing here needs to
 // intercept the day tick's own (rarer, but still genuine) calls to them.
-#define RVA_DAILY_POLLUTION 0x4D5EE0  // v1.1.1.13; was 0x4D5F50.  decay the grid, accumulate exposure
-#define RVA_DAILY_LOANS     0x4B95F0  // v1.1.1.13; was 0x4B9660.  one day of interest and repayment
-#define RVA_DAILY_NOTICES   0x4CD310  // v1.1.1.13; was 0x4CD380.  age the notification list, drop the expired
+#define RVA_DAILY_POLLUTION 0x4FC2C0    // v1.2.0.8; was 0x4D5EE0. decay the grid, accumulate exposure
+#define RVA_DAILY_LOANS     0x4DF7F0    // v1.2.0.8; was 0x4B95F0. one day of interest and repayment
+#define RVA_DAILY_NOTICES   0x4F36F0    // v1.2.0.8; was 0x4CD310. age the notification list, drop the expired
 
 // The 60.0f one calendar day lasts, as the day tick reads it.
-#define RVA_DAY_LENGTH    0x90AA88   // v1.1.1.13; was 0x90AA78
+#define RVA_DAY_LENGTH    0x951FAC     // v1.2.0.8; was 0x90AA88
 #define VANILLA_DAY_LEN   60.0f
 
 // `mov dword ptr [r10+0xED4], 0x41700000` - the cross-fade duration written on
 // every weather change. The opcode is checked and the immediate is read rather
 // than assumed.
-#define RVA_FADE_MOV      0x3341A4   // v1.1.1.13; was 0x334224
+#define RVA_FADE_MOV      0x352BA4     // v1.2.0.8; was 0x3341A4
 #define RVA_FADE_IMM      (RVA_FADE_MOV + 7)
 #define VANILLA_FADE      15.0f
 
@@ -228,22 +228,30 @@
 
 // World object fields. Everything here was read off the disassembly of the two
 // hooked functions and the day tick.
-#define OFF_WEATHER_ON    0x5C4   // int   weather simulated at all
-#define OFF_DAY           0x590   // int   day of the year, 0..364
-#define OFF_YEAR          0x594   // int
-#define OFF_DAYTIME       0x59C   // float 0..60 into the current day
-#define OFF_SNOWING       0xE28   // int   read by the light factor
-#define OFF_WEATHER       0xE70   // int   current weathers/*.ini
-#define OFF_NIGHT         0xE74   // float night factor, 0..1
-#define OFF_FADE_ELAPSED  0xED0   // float how far into a lighting cross-fade
-#define OFF_FADE_LEN      0xED4   // float how long a lighting cross-fade takes
+//
+// v1.2.0.8: the world object grew before the calendar block and twice between
+// the weather pair and the fade pair, so every offset here moved - +0x28 for
+// the calendar block, +0x28 for the snow flag, +0x30 for the weather pair and
+// +0xA0 for the fade pair. Each was read off the same instruction of the same
+// function in the new build, not shifted by rule: the light factor's one read
+// of +0xE28 now reads +0xE50 while its reads of +0xE70 now read +0xEA0, which
+// is why the two deltas differ.
+#define OFF_WEATHER_ON    0x5EC   // int   weather simulated at all   (was 0x5C4)
+#define OFF_DAY           0x5B8   // int   day of the year, 0..364   (was 0x590)
+#define OFF_YEAR          0x5BC   // int                             (was 0x594)
+#define OFF_DAYTIME       0x5C4   // float 0..60 into the current day (was 0x59C)
+#define OFF_SNOWING       0xE50   // int   read by the light factor  (was 0xE28)
+#define OFF_WEATHER       0xEA0   // int   current weathers/*.ini    (was 0xE70)
+#define OFF_NIGHT         0xEA4   // float night factor, 0..1        (was 0xE74)
+#define OFF_FADE_ELAPSED  0xF70   // float how far into a lighting cross-fade (was 0xED0)
+#define OFF_FADE_LEN      0xF74   // float how long a lighting cross-fade takes (was 0xED4)
 
 // The highest object offset the light factor reads, rounded up. Its scratch
 // copy has to be at least this big.
-#define LIGHT_SCRATCH     0xE30
+#define LIGHT_SCRATCH     (OFF_WEATHER + sizeof(int))
 
-// The snow-season test reads one field of its argument, +0x590.
-#define SEASON_SCRATCH    0x5A0
+// The snow-season test reads one field of its argument, +0x590 (now +0x5B8).
+#define SEASON_SCRATCH    (OFF_DAY + sizeof(int))
 
 // The number of phases in the game's own cycle. It is not a setting: it is how
 // many cases the weather tick and the light factor are written with.
@@ -260,46 +268,46 @@ static const BYTE kWeatherTickPrologue[] = {
     0x40, 0x53,                                  // push rbx
     0x41, 0x55,                                  // push r13
     0x48, 0x83, 0xEC, 0x58,                      // sub  rsp,0x58
-    0x83, 0xB9, 0xC4, 0x05, 0x00, 0x00, 0x00     // cmp  dword ptr [rcx+0x5C4],0
+    0x83, 0xB9, 0xEC, 0x05, 0x00, 0x00, 0x00     // cmp  dword ptr [rcx+0x5EC],0
 };
 
 static const BYTE kLightFactorPrologue[] = {
     0x40, 0x53,                                  // push rbx
     0x48, 0x83, 0xEC, 0x50,                      // sub  rsp,0x50
-    0x83, 0xB9, 0xC4, 0x05, 0x00, 0x00, 0x00,    // cmp  dword ptr [rcx+0x5C4],0
+    0x83, 0xB9, 0xEC, 0x05, 0x00, 0x00, 0x00,    // cmp  dword ptr [rcx+0x5EC],0
     0x48, 0x8B, 0xD9                             // mov  rbx,rcx
 };
 
-// `mov dword ptr [r10+0xED4], imm32`
-static const BYTE kFadeMov[] = { 0x41, 0xC7, 0x82, 0xD4, 0x0E, 0x00, 0x00 };
+// `mov dword ptr [r10+0xF74], imm32`
+static const BYTE kFadeMov[] = { 0x41, 0xC7, 0x82, 0x74, 0x0F, 0x00, 0x00 };
 
 // The snow-season test, minus the displacement of its one rip-relative load.
 static const BYTE kSnowHead[]  = { 0x48, 0x8B, 0x05 };                     // mov rax,[rip+X]
-static const BYTE kSnowTail[]  = { 0x48, 0x8B, 0x90, 0xD8, 0x0E, 0x00, 0x00,   // mov rdx,[rax+0xED8]
+static const BYTE kSnowTail[]  = { 0x48, 0x8B, 0x90, 0x78, 0x0F, 0x00, 0x00,   // mov rdx,[rax+0xF78]
                                    0x44, 0x8B, 0x82, 0xEC, 0x08, 0x00, 0x00 }; // mov r8d,[rdx+0x8EC]
 
 // The three daily passes, verified by prologue before being trusted as
-// function pointers. `cmp [rcx+0x5D4],0` in the pollution one is the same
+// function pointers. `cmp [rcx+0x5FC],0` in the pollution one is the same
 // "is pollution simulated at all" gate the emitter and sampler use - calling
 // it when the setting is off is already a no-op inside the function itself.
 static const BYTE kDailyPollutionSig[] = {
     0x4C, 0x8B, 0xDC,                                        // mov  r11,rsp
     0x57,                                                     // push rdi
     0x48, 0x83, 0xEC, 0x70,                                  // sub  rsp,0x70
-    0x83, 0xB9, 0xD4, 0x05, 0x00, 0x00, 0x00,                // cmp  dword ptr [rcx+0x5D4],0
+    0x83, 0xB9, 0xFC, 0x05, 0x00, 0x00, 0x00,                // cmp  dword ptr [rcx+0x5FC],0
     0x48, 0x8B, 0xF9                                         // mov  rdi,rcx
 };
 static const BYTE kDailyLoansSig[] = {
     0x48, 0x89, 0x5C, 0x24, 0x10,                            // mov  [rsp+0x10],rbx
     0x57,                                                     // push rdi
     0x48, 0x83, 0xEC, 0x30,                                  // sub  rsp,0x30
-    0x48, 0x8B, 0x91, 0xD8, 0x0B, 0x01, 0x00                 // mov  rdx,[rcx+0x10BD8]
+    0x48, 0x8B, 0x91, 0x70, 0x0C, 0x01, 0x00                 // mov  rdx,[rcx+0x10C70]
 };
 static const BYTE kDailyNoticesSig[] = {
     0x48, 0x89, 0x74, 0x24, 0x18,                            // mov  [rsp+0x18],rsi
     0x57,                                                     // push rdi
     0x48, 0x83, 0xEC, 0x20,                                  // sub  rsp,0x20
-    0x48, 0x8B, 0xB1, 0x50, 0xD1, 0x00, 0x00                 // mov  rsi,[rcx+0xD150]
+    0x48, 0x8B, 0xB1, 0xE8, 0xD1, 0x00, 0x00                 // mov  rsi,[rcx+0xD1E8]
 };
 
 // ---------------------------------------------------------------- settings

@@ -70,20 +70,24 @@
 
 // ---------------------------------------------------------------- the game
 
-#define P_PERSON_PLAN_RVA   0x836CE0  // v1.1.1.13; was 0x836B40
-#define P_STORAGE_BUILD_RVA 0x0E40F0   // FUN_1400e40f0(parser, storage, class, cap, res)
-#define P_SHOP_TICK_RVA     0x171E30  // v1.1.1.13; was 0x171E10. Building type 3
-#define P_TYPE_LOAD_RVA     0x11D800   // v1.1.1.9; was 0x11D810 - one of the few
+#define P_PERSON_PLAN_RVA   0x877D80    // v1.2.0.8; was 0x836CE0
+#define P_STORAGE_BUILD_RVA 0xFBCD0     // v1.2.0.8; was 0xE40F0. FUN_1400e40f0(parser, storage, class, cap, res)
+#define P_SHOP_TICK_RVA     0x18AA90    // v1.2.0.8; was 0x171E30. Building type 3
+#define P_TYPE_LOAD_RVA     0x1361F0     // v1.2.0.8; was 0x11D800. - one of the few
                                        // sites that moved DOWN, see docs/02-findings.md
-#define P_BUILDING_TYPES    0x9E6A30   // the vector<TYPE> that function fills
+#define P_BUILDING_TYPES    0xA30AE8     // v1.2.0.8; was 0x9E6A30. the vector<TYPE> that function fills
 // Not a vector of pointers - a vector of the objects themselves, stride 0xBE8.
 // The clear() at 0x1FF240 walks it with `lVar2 = lVar2 + 0xbe8`, and a live
 // span of 40 477 440 bytes divides by 0xBE8 exactly 13 280 times.
-#define TYPE_STRIDE         0xBE8
-#define P_SLOT_PUSH_RVA     0x0B14E0   // std::vector<Slot>::push_back, 16-byte value
-#define P_RESOURCE_VECTOR   0x9E11C0   // the resource vector: begin, end, capacity
+#define TYPE_STRIDE         0xE98      // v1.2.0.8; was 0xBE8. The descriptor grew by 0x2B0: the clear loops
+                                    // around its destructor (same function, same five callers) step by
+                                    // 0xE98 now. The type's storage vector moved with it, +0x3A0 -> +0x3A8,
+                                    // still well inside TYPEDESC_SCAN
+#define P_SLOT_PUSH_RVA     0xC9150     // v1.2.0.8; was 0xB14E0. std::vector<Slot>::push_back, 16-byte value
+#define P_RESOURCE_VECTOR   0xA2B268     // v1.2.0.8; was 0x9E11C0. the resource vector: begin, end, capacity
 
-#define RES_STRIDE          832        // 0x340
+#define RES_STRIDE          896        // v1.2.0.8; was 832 (0x340). 0x380 - the record grew by two
+                                    // transport-class blocks; head and classes 0..17 did not move
 #define RES_NAME            0x00       // inline, NUL-terminated
 // Per-transport-class block inside a record: the factor a storage of that class
 // multiplies its capacity by, and a byte that excludes the pair outright. A
@@ -92,6 +96,11 @@
 #define RES_CLASS_FACTOR    0xCC       // + class * 0x20
 #define RES_CLASS_BLOCKED   0xE8       // + class * 0x20
 #define RES_CLASS_STRIDE    0x20
+// v1.2.0.8; was eighteen. The game added two classes behind WASTE - CRYO and
+// HYPERGOLIC, for the rocket propellants - so a record now carries twenty
+// blocks and everything after them moved by 0x40. Classes 0..17 keep their
+// numbers and their parameters.
+#define RES_CLASS_COUNT    20
 
 #define ST_CAPACITY         0x8C       // what $STORAGE declared
 #define ST_CLASS            0x90       // RESOURCE_TRANSPORT_*
@@ -128,8 +137,8 @@
 // A vector with a null begin and a non-null end is not a state any live vector
 // can be in, so normalising it to properly empty is safe and is all that is
 // needed: the loop is guarded by `(end - begin) >> 4`, which is then zero.
-#define G_GOODS_BUCKETS     0x12720    // five of them, stride 0x18
-#define G_GOODS_BUCKET_OTHER 0x12780
+#define G_GOODS_BUCKETS     0x127D0    // v1.2.0.8; was 0x12720. five of them, stride 0x18
+#define G_GOODS_BUCKET_OTHER 0x12830    // v1.2.0.8; was 0x12780
 #define G_GOODS_BUCKET_COUNT 5
 
 #define B_STORAGES          0x970      // building -> vector<Storage>, stride 0xE0
@@ -585,7 +594,7 @@ static int InferDemandCategory(BYTE* storage, int cls)
 // starts at zero and the shop orders its own first delivery.
 static void ExtendStorage(BYTE* storage, int cls, bool live)
 {
-    if (cls < 0 || cls > 31) return;
+    if (cls < 0 || cls >= RES_CLASS_COUNT) return;
     float capacity = *(float*)(storage + ST_CAPACITY);
     if (capacity <= 0.0f) return;
 
@@ -836,7 +845,7 @@ static ResVector* FindStoragesIn(BYTE* td)
             BYTE* s   = v->begin + i * STORAGE_STRIDE;
             int   cls = *(int*)(s + ST_CLASS);
             float cap = *(float*)(s + ST_CAPACITY);
-            if (cls < 0 || cls > 17 || !(cap > 0.0f) || !SlotVectorValid(s)) ok = false;
+            if (cls < 0 || cls >= RES_CLASS_COUNT || !(cap > 0.0f) || !SlotVectorValid(s)) ok = false;
             else if (resBegin && !SlotsPointAtResources(s, resBegin, resEnd)) ok = false;
         }
         if (ok) return v;

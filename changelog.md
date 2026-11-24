@@ -1,5 +1,18 @@
 ## Changelog
 
+*v0.4.5*
+
+- The launcher highlights plugins whose declared TesmioLoader target differs from the current release or is unknown.
+
+*v0.4.4*
+
+- Port the loader and its nine enabled plugin targets to game build v1.2.0.8. Update the resource record layout, transport classes, building type stride and engine texture vtable.
+- Use the current addresses when an existing `resources.ini` still carries the v1.1.1.13 defaults.
+
+*v0.4.3*
+
+- Prefer the `vfs` directory beside the loader DLL. `build.bat --package` bundles it with the launcher, DLL and default INI for installation in the game directory.
+
 *v0.4.2*
 
 - The launcher writes its build version into `tesmioloader.ini` when it creates the file. The window title reads the version from the INI.

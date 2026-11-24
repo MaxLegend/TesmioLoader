@@ -195,11 +195,11 @@ static const struct
 
 // ---------------------------------------------------------------- offsets
 
-#define GAME_YEAR        0x594    // int, the absolute year: 1970 in a fresh save
-#define GAME_RES_FOOD    0xC300   // the four cached shop-goods records
-#define GAME_RES_MEAT    0xC310
-#define GAME_RES_CLOTHES 0xC318
-#define GAME_RES_ELECTR  0xC320
+#define GAME_YEAR        0x5BC  // v1.2.0.8; was 0x594. int, the absolute year: 1970 in a fresh save
+#define GAME_RES_FOOD    0xC398  // v1.2.0.8; was 0xC300. the four cached shop-goods records
+#define GAME_RES_MEAT    0xC3A8  // v1.2.0.8; was 0xC310
+#define GAME_RES_CLOTHES 0xC3B0  // v1.2.0.8; was 0xC318
+#define GAME_RES_ELECTR  0xC3B8  // v1.2.0.8; was 0xC320
 
 #define PERSON_STATUS    0xD8     // eleven floats
 #define PERSON_DCOUNT    0x110
@@ -234,17 +234,17 @@ static const struct
 
 // The game object is a static, not a pointer to one - see docs/14-cities.md
 // and docs/15-daynight.md, both of which already rely on this address.
-#define P_GAMEOBJ           0x9D4F10
+#define P_GAMEOBJ           0xA1EF20   // v1.2.0.8; was 0x9D4F10
 
 // std::vector<Person*>, a global on its own (not inside the game object) - see
 // 02-findings.md, "The person". Begin at +0, end 8 bytes later; the element
 // count is (end-begin)/8, decided at runtime.
-#define PERSON_VEC_BEGIN    0x9E75B8
-#define PERSON_VEC_END      0x9E75C0
+#define PERSON_VEC_BEGIN    0xA31678   // v1.2.0.8; was 0x9E75B8
+#define PERSON_VEC_END      0xA31680   // v1.2.0.8; was 0x9E75C0
 
 // std::vector<Building*>, every building on the map - game+0x11B08 (begin),
 // +0x11B10 (end). See docs/14-cities.md.
-#define GAME_BUILDING_VEC   0x11B08
+#define GAME_BUILDING_VEC   0x11BB0  // v1.2.0.8; was 0x11B08
 
 // The type lives on the building's *type descriptor*, not on the building
 // itself - confirmed both by depletion.cpp/accumulator.cpp (which already read
@@ -254,7 +254,8 @@ static const struct
 // Reading +0x360 straight off the building, as this file did through 1.2,
 // reads an unrelated field and never matches - see docs/07-pitfalls.md.
 #define B_TYPEDESC          0x318
-#define BUILDING_TYPE       0x360
+#define BUILDING_TYPE       0x368      // v1.2.0.8; was 0x360. The type descriptor grew by
+                                      // eight bytes ahead of this field; 2 is still $TYPE_LIVING
 #define BUILDINGTYPE_LIVING 2        // SOVIETInstructions.txt: BUILDINGTYPE_LIVING = 2,
                                       // and no other type shares the number
 
@@ -270,7 +271,7 @@ static int BuildingTypeOf(const BYTE* b)
 
 // The evaluator. rcx is the world, rdx the person; its return value is dead at
 // the one call site.
-#define RVA_EVALUATE 0x83A870   // v1.1.1.13; was 0x83A6D0
+#define RVA_EVALUATE 0x87B910     // v1.2.0.8; was 0x83A870
 static const BYTE kEvaluatePrologue[] = {
     0x48, 0x8B, 0xC4,               // mov  rax,rsp
     0x55, 0x56, 0x57,               // push rbp / rsi / rdi
@@ -279,7 +280,7 @@ static const BYTE kEvaluatePrologue[] = {
 };
 
 // The living building's tick: (game, building, flag).
-#define RVA_LIVING_TICK 0x1BC190   // v1.1.1.13; was 0x1BC210
+#define RVA_LIVING_TICK 0x1D54C0     // v1.2.0.8; was 0x1BC190
 static const BYTE kLivingPrologue[] = {
     0x48, 0x8B, 0xC4,               // mov rax,rsp
     0x48, 0x89, 0x58, 0x10,         // mov [rax+0x10],rbx
@@ -290,9 +291,11 @@ static const BYTE kLivingPrologue[] = {
 
 // "Building is without power supply": the panel's own call, and the query it
 // calls. Only this one call site is redirected.
-#define RVA_POWER_CALL  0x76161B   // v1.1.1.13; was 0x76147B
-#define RVA_HAS_POWER   0x1BBF60   // v1.1.1.13; was 0x1BBFE0
-static const BYTE kHasPowerHead[] = { 0x83, 0xB9, 0xB0, 0x05, 0x00, 0x00, 0x00 };
+#define RVA_POWER_CALL  0x79E575     // v1.2.0.8; was 0x76161B
+#define RVA_HAS_POWER   0x1D5290     // v1.2.0.8; was 0x1BBF60
+// v1.2.0.8: the gate is `cmp dword ptr [rcx+0x5D8],0` - the world object's
+// "power simulated at all" flag moved with the rest of its settings block.
+static const BYTE kHasPowerHead[] = { 0x83, 0xB9, 0xD8, 0x05, 0x00, 0x00, 0x00 };
 
 // One repointed rate. `wide` marks a double rather than a float, which the two
 // electricity sites are: they go cvtss2sd / mulsd / cvtpd2ps.
@@ -319,25 +322,25 @@ static const BYTE kMovssXmm8[]   = { 0xF3, 0x44, 0x0F, 0x10, 0x05 }; // movss xm
 static const Rate kRates[] = {
     // 0x1BC210, the living tick: happiness for electricity and for water. Two
     // electricity branches, split on how the shortfall is measured.
-    { 0x1BC31B, kMulsdXmm1, 4, 0x909E40, 0.00021666666666666666, 1, NEED_ELECTRICITY, "electricity a"  },
-    { 0x1BC4F5, kMulsdXmm1, 4, 0x909E68, 0.00033333333333333332, 1, NEED_ELECTRICITY, "electricity b"  },
-    { 0x1BC6CB, kMulssXmm3, 4, 0x909B00, 0.0009999999310821295,  0, NEED_WATER,       "water happy"    },
+    { 0x1D564B, kMulsdXmm1, 4, 0x951320, 0.00021666666666666666, 1, NEED_ELECTRICITY, "electricity a"  },
+    { 0x1D5825, kMulsdXmm1, 4, 0x951348, 0.00033333333333333332, 1, NEED_ELECTRICITY, "electricity b"  },
+    { 0x1D59FB, kMulssXmm3, 4, 0x950FAC, 0.0009999999310821295,  0, NEED_WATER,       "water happy"    },
 
     // 0x488B80, interior temperature: happiness in xmm7, health in xmm8, and a
     // second pair for the colder setting.
-    { 0x488B7A, kMovssXmm7, 4, 0x909B20, 0.001500000013038516,   0, NEED_HEATING,     "heat happy a"   },
-    { 0x488BAC, kMovssXmm7, 4, 0x909B0C, 0.0011699999449774623,  0, NEED_HEATING,     "heat happy b"   },
-    { 0x488B96, kMovssXmm8, 5, 0x909B28, 0.0017000000225380063,  0, NEED_HEATING,     "heat health a"  },
-    { 0x488BB4, kMovssXmm8, 5, 0x909B18, 0.0013259999686852098,  0, NEED_HEATING,     "heat health b"  },
+    { 0x4AED8A, kMovssXmm7, 4, 0x950FCC, 0.001500000013038516,   0, NEED_HEATING,     "heat happy a"   },
+    { 0x4AEDBC, kMovssXmm7, 4, 0x950FB8, 0.0011699999449774623,  0, NEED_HEATING,     "heat happy b"   },
+    { 0x4AEDA6, kMovssXmm8, 5, 0x950FD4, 0.0017000000225380063,  0, NEED_HEATING,     "heat health a"  },
+    { 0x4AEDC4, kMovssXmm8, 5, 0x950FC4, 0.0013259999686852098,  0, NEED_HEATING,     "heat health b"  },
 
     // 0x1B0950, drinking water: health, in two blocks. The second picks its
     // rate from the difficulty; the first has a bonus term for clean water,
     // which is zeroed as well - a locked need must not pay either way.
-    { 0x1B0B44, kMulssXmm2, 4, 0x909AC4, 0.0002500000118743628,  0, NEED_WATER,       "water health a" },
-    { 0x1B0B51, kMulssXmm0, 4, 0x909ACC, 0.00031250002211891115, 0, NEED_WATER,       "water health b" },
-    { 0x1B0F82, kMulssXmm1, 4, 0x909AB0, 0.0001875000016298145,  0, NEED_WATER,       "water health c" },
-    { 0x1B0F92, kMulssXmm1, 4, 0x909AC4, 0.0002500000118743628,  0, NEED_WATER,       "water health d" },
-    { 0x1B0FA2, kMulssXmm1, 4, 0x909ACC, 0.00031250002211891115, 0, NEED_WATER,       "water health e" },
+    { 0x1C9A94, kMulssXmm2, 4, 0x950F70, 0.0002500000118743628,  0, NEED_WATER,       "water health a" },
+    { 0x1C9AA4, kMulssXmm2, 4, 0x950F78, 0.00031250002211891115, 0, NEED_WATER,       "water health b" },
+    { 0x1C9ED1, kMulssXmm1, 4, 0x950F5C, 0.0001875000016298145,  0, NEED_WATER,       "water health c" },
+    { 0x1C9EE1, kMulssXmm1, 4, 0x950F70, 0.0002500000118743628,  0, NEED_WATER,       "water health d" },
+    { 0x1C9EF1, kMulssXmm1, 4, 0x950F78, 0.00031250002211891115, 0, NEED_WATER,       "water health e" },
 };
 
 #define RATE_COUNT ((int)(sizeof(kRates) / sizeof(kRates[0])))
@@ -353,13 +356,13 @@ struct EduSite
 };
 
 static const EduSite kEduSites[] = {
-    { 0x823C89, NEED_SCHOOL,       "school: basic education at birth"   },
-    { 0x8242B6, NEED_SCHOOL,       "school: education for a new citizen" },
-    { 0x8242E5, NEED_SCHOOL,       "school: the same, second branch"    },
-    { 0x834F05, NEED_SCHOOL,       "school: education on arrival"       },
-    { 0x761A87, NEED_SCHOOL,       "school: the panel's warning"        },
-    { 0x824C8B, NEED_KINDERGARTEN, "kindergarten: a parent's job search" },
-    { 0x761AC8, NEED_KINDERGARTEN, "kindergarten: the panel's warning"  },
+    { 0x864D09, NEED_SCHOOL,       "school: basic education at birth"   },
+    { 0x865336, NEED_SCHOOL,       "school: education for a new citizen" },
+    { 0x865365, NEED_SCHOOL,       "school: the same, second branch"    },
+    { 0x875F95, NEED_SCHOOL,       "school: education on arrival"       },
+    { 0x79E9E7, NEED_SCHOOL,       "school: the panel's warning"        },
+    { 0x865D0B, NEED_KINDERGARTEN, "kindergarten: a parent's job search" },
+    { 0x79EA28, NEED_KINDERGARTEN, "kindergarten: the panel's warning"  },
 };
 
 #define EDU_SITE_COUNT ((int)(sizeof(kEduSites) / sizeof(kEduSites[0])))
@@ -483,7 +486,7 @@ static bool RepointRate(int i)
 //   83 /7 mod=10 disp32 imm8            7 bytes  ->  7, exactly
 //   41 83 /7 mod=10 disp32 imm8         8 bytes  ->  7 + nop
 //   83 /7 mod=10 rm=100 SIB disp32 imm8 8 bytes  ->  7 + nop
-#define GAME_EDUCATION_SIM 0x5DC
+#define GAME_EDUCATION_SIM 0x604  // v1.2.0.8; was 0x5DC
 
 static bool RepointEduSite(const EduSite* s, int* flag)
 {

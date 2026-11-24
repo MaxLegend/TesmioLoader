@@ -105,9 +105,9 @@
 // v1.1.1.9. The dispatcher was confirmed by what its body touches - the
 // building vector at +0x11B08, the unpowered flag at +0x1130 and the voltage
 // pointer at +0x10E8 - not by the offset alone.
-#define P_DISPATCH_RVA    0x139A70   // was 0x139A80 - one simulation tick
-#define P_NODE_SHARE_RVA  0x1BB6F0  // v1.1.1.13; was 0x1BB770. (game, building, what, priority)
-#define P_SUB_SHARE_RVA   0x1B9630  // v1.1.1.13; was 0x1B96B0 - hands its
+#define P_DISPATCH_RVA    0x152520     // v1.2.0.8; was 0x139A70 - one simulation tick
+#define P_NODE_SHARE_RVA  0x1D4A20    // v1.2.0.8; was 0x1BB6F0. (game, building, what, priority)
+#define P_SUB_SHARE_RVA   0x1D2960    // v1.2.0.8; was 0x1B9630. - hands its
                                      // storage to the buildings in its catchment
 
 // FUN_1401bb700's third argument decides which of the two things a grid node
@@ -134,8 +134,8 @@
 #define NODE_SHARE_VOLTAGE 0
 #define NODE_SHARE_ENERGY  1
 #define NODE_ANY_PRIORITY  (-1)
-#define P_TIMER_OBJ       0x9D4EE0   // the C3D_TIMER the simulation steps on
-#define P_TIMER_STEP      0x909B04  // v1.1.1.13; was 0x909AFC.  0.001f, the argument every PowerTime passes
+#define P_TIMER_OBJ       0xA1EEF0     // v1.2.0.8; was 0x9D4EE0. the C3D_TIMER the simulation steps on
+#define P_TIMER_STEP      0x950FB0    // v1.2.0.8; was 0x909B04. 0.001f, the argument every PowerTime passes
                                      // (.rdata moved -0x18 in v1.1.1.9)
 
 // The electric panel - the two dials in a grid node's window.
@@ -147,17 +147,17 @@
 // type descriptor declares electricity use. Every panel in that window takes
 // the running Y **by pointer** and leaves the next row's Y in it, which is what
 // makes one more row cheap: draw at *y and add a row height back.
-#define P_ELEC_PANEL_RVA  0x7028D0  // v1.1.1.13; was 0x702730
-#define P_FONTMANAGER     0x996FB0   // C3D_FONTMANAGER, by address
-#define P_PANEL_FONT      0x995220   // the C3D_FONT* the panel's rows use
-#define P_DPI             0x992088   // the scale every layout constant is multiplied by
-#define P_ROW_STEP        0x90A9DC  // v1.1.1.13; was 0x90A9CC.  35 - one row, and the x indent as well
+#define P_ELEC_PANEL_RVA  0x738570    // v1.2.0.8; was 0x7028D0
+#define P_FONTMANAGER     0x9E0FC0     // v1.2.0.8; was 0x996FB0. C3D_FONTMANAGER, by address
+#define P_PANEL_FONT      0x9DF338     // v1.2.0.8; was 0x995220. the C3D_FONT* the panel's rows use
+#define P_DPI             0x9DC08C     // v1.2.0.8; was 0x992088. the scale every layout constant is multiplied by
+#define P_ROW_STEP        0x951F00    // v1.2.0.8; was 0x90A9DC. 35 - one row, and the x indent as well
 #define W_BUILDING        0x240      // window -> the building it is about
 #define W_COLLAPSED       0x248      // non-zero while the section is rolled up
 #define PANEL_LABEL_COLOUR 0xFF990000u
 
-#define G_BUILDINGS       0x11B08    // game -> vector<Building*> begin
-#define G_BUILDINGS_END   0x11B10    // ...and end
+#define G_BUILDINGS       0x11BB0    // v1.2.0.8; was 0x11B08. game -> vector<Building*> begin
+#define G_BUILDINGS_END   0x11BB8    // v1.2.0.8; was 0x11B10. ...and end
 
 #define B_TYPEDESC        0x318      // building -> its type descriptor
 #define B_FINISHED        0x604      // construction progress; 1.0 when done
@@ -208,7 +208,7 @@
 #define CONN_ELETRIC_HIGH 7
 #define CONN_ELETRIC_LOW  8
 
-#define T_BUILDING_TYPE   0x360      // typedesc -> building type
+#define T_BUILDING_TYPE   0x368      // v1.2.0.8; was 0x360. typedesc -> building type
 
 #define S_STRIDE          0xE0       // one storage
 #define S_SLOTS           0x00       // storage -> vector<Slot> begin; one slot

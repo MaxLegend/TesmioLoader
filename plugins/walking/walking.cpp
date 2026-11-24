@@ -98,23 +98,28 @@
 // ---------------------------------------------------------------- the sites
 
 // v1.1.1.9. The walking limit in the batch builder. An immediate, so there is
-// nothing to repoint: mov dword ptr [rsp+0x7C], 480.0f. Confirmed by the
+// nothing to repoint: mov dword ptr [rbp-0x80], 480.0f. Confirmed by the
 // opcode and the 480.0f operand together, not by the offset alone; was 0x12E2DD.
-#define RVA_WALK_LIMIT   0x12E2CD
-static const BYTE kWalkLimitOp[] = { 0xC7, 0x44, 0x24, 0x7C };
+//
+// v1.2.0.8: the compiler now addresses the slot off RBP instead of RSP, so
+// the encoding is three bytes (C7 45 80) instead of four (C7 44 24 7C) and
+// the immediate sits one byte earlier. Everything below reads the length off
+// the array rather than assuming it, so this line is the whole of the change.
+#define RVA_WALK_LIMIT   0x146CBD   // v1.2.0.8; was 0x12E2CD
+static const BYTE kWalkLimitOp[] = { 0xC7, 0x45, 0x80 };   // mov dword ptr [rbp-0x80],
 #define VANILLA_WALK     480.0f
 
 // Everything else is `movss xmm0,[rip+disp32]`, and only the displacement is
 // rewritten - and only after the address it resolves to and the value in there
 // both check out. .rdata moved by a uniform -0x18 in this build.
-#define RVA_WALK_CONST   0x90AF30  // v1.1.1.13; was 0x90AF20.  480, as the queued builder and the overlay read it - was 0x90AF38
-#define RVA_CAR_CONST    0x90B110  // v1.1.1.13; was 0x90B104
+#define RVA_WALK_CONST   0x952468    // v1.2.0.8; was 0x90AF30. 480, as the queued builder and the overlay read it - was 0x90AF38
+#define RVA_CAR_CONST    0x95264C    // v1.2.0.8; was 0x90B110
 #define VANILLA_CAR      2500.0f
 
-#define RVA_WALK_RADIUS  0x90AF68  // v1.1.1.13; was 0x90AF58
+#define RVA_WALK_RADIUS  0x9524A0    // v1.2.0.8; was 0x90AF68
 #define VANILLA_WALK_R   530.0f
 
-#define RVA_CAR_RADIUS   0x90B114  // v1.1.1.13; was 0x90B108
+#define RVA_CAR_RADIUS   0x952650    // v1.2.0.8; was 0x90B114
 #define VANILLA_CAR_R    2600.0f
 
 // The four values, and the slot each site points at.
@@ -139,21 +144,21 @@ struct Site
 // .rdata constant (see docs/02-findings.md). Old rvas, in the same order:
 // 0x12E7AF, 0x43F04A, 0x43F835, 0x12F926, 0x43FFB3, 0x12DEA7, 0x12F502.
 static const Site kSites[] = {
-    { 0x12E79F, RVA_WALK_CONST,  VANILLA_WALK,   SLOT_WALK,   "walk build queued" },
-    { 0x43F07A, RVA_WALK_CONST,  VANILLA_WALK,   SLOT_WALK,   "walk overlay"      },
-    { 0x43F865, RVA_WALK_CONST,  VANILLA_WALK,   SLOT_WALK,   "walk overlay 2"    },
-    { 0x12F916, RVA_CAR_CONST,   VANILLA_CAR,    SLOT_CAR,    "car build"         },
-    { 0x43FFE3, RVA_CAR_CONST,   VANILLA_CAR,    SLOT_CAR,    "car overlay"       },
-    { 0x12DE97, RVA_WALK_RADIUS, VANILLA_WALK_R, SLOT_WALK_R, "walk rebuild"      },
-    { 0x12F4F2, RVA_CAR_RADIUS,  VANILLA_CAR_R,  SLOT_CAR_R,  "car rebuild"       },
+    { 0x14718F, RVA_WALK_CONST,  VANILLA_WALK,   SLOT_WALK,   "walk build queued" },
+    { 0x4636EA, RVA_WALK_CONST,  VANILLA_WALK,   SLOT_WALK,   "walk overlay"      },
+    { 0x463ED5, RVA_WALK_CONST,  VANILLA_WALK,   SLOT_WALK,   "walk overlay 2"    },
+    { 0x148306, RVA_CAR_CONST,   VANILLA_CAR,    SLOT_CAR,    "car build"         },
+    { 0x464653, RVA_CAR_CONST,   VANILLA_CAR,    SLOT_CAR,    "car overlay"       },
+    { 0x146887, RVA_WALK_RADIUS, VANILLA_WALK_R, SLOT_WALK_R, "walk rebuild"      },
+    { 0x147EE2, RVA_CAR_RADIUS,  VANILLA_CAR_R,  SLOT_CAR_R,  "car rebuild"       },
 };
 
 // The save loader's "this save predates the longer distances" test. v1.1.1.9;
 // was 0x438366/0x438373 - same shape, cmp+jge then a separate test al,al/jne,
 // both landing on the same target, confirmed by disassembly.
-#define RVA_REGEN_CMP    0x438396  // v1.1.1.13; was 0x438406.  83 3D <disp32> 6E   cmp dword[ver],110
-#define RVA_REGEN_TEST   0x4383A3  // v1.1.1.13; was 0x438413.  84 C0 0F 85 ...     test al,al / jnz
-#define RVA_SAVE_VERSION 0x9E9C3C
+#define RVA_REGEN_CMP    0x45C7E4    // v1.2.0.8; was 0x438396. 83 3D <disp32> 6E   cmp dword[ver],110
+#define RVA_REGEN_TEST   0x45C7F1    // v1.2.0.8; was 0x4383A3. 84 C0 0F 85 ...     test al,al / jnz
+#define RVA_SAVE_VERSION 0xA33CFC   // v1.2.0.8; was 0x9E9C3C
 
 static const BYTE kMovssRip[]  = { 0xF3, 0x0F, 0x10, 0x05 };
 static const BYTE kRegenTest[] = { 0x84, 0xC0, 0x0F, 0x85 };
@@ -203,14 +208,15 @@ static bool PatchImmediate(DWORD siteRva, const BYTE* op, float vanilla,
 {
     BYTE* site = g_exeBase + siteRva;
 
-    if (memcmp(site, op, 4) != 0)
+    const size_t opLen = sizeof(kWalkLimitOp);
+    if (memcmp(site, op, opLen) != 0)
     {
-        Logf("walking  %s: rva 0x%X is %02X %02X %02X %02X, not the expected mov - refusing",
-             label, siteRva, site[0], site[1], site[2], site[3]);
+        Logf("walking  %s: rva 0x%X is %02X %02X %02X, not the expected mov - refusing",
+             label, siteRva, site[0], site[1], site[2]);
         return false;
     }
 
-    float now = *(const float*)(site + 4);
+    float now = *(const float*)(site + opLen);
     if (now != vanilla)
     {
         Logf("walking  %s: rva 0x%X holds %.1f, expected %.1f - refusing",
@@ -218,7 +224,7 @@ static bool PatchImmediate(DWORD siteRva, const BYTE* op, float vanilla,
         return false;
     }
 
-    if (!WriteCode(site + 4, &value, sizeof(value), label)) return false;
+    if (!WriteCode(site + opLen, &value, sizeof(value), label)) return false;
 
     Logf("walking  %-16s %.0f -> %.0f  (rva 0x%X, immediate)",
          label, vanilla, value, siteRva);
@@ -304,9 +310,11 @@ static bool PatchRegenOnLoad()
         return false;
     }
 
-    // 127 is the largest an imm8 compare can carry, and the format version is
-    // 124 today. If a future patch takes it past 127 this stops working - and
-    // it stops by doing nothing, which is the right way round.
+    // 127 is the largest an imm8 compare can carry. The format version was 124
+    // through v1.1.1.13 and is 125 in v1.2.0.8 (the save loader gained one
+    // `cmp [ver],124`, and nothing higher). If a future patch takes it past
+    // 127 this stops working - and it stops by doing nothing, which is the
+    // right way round.
     BYTE ver = 127;
     if (!WriteCode(cmp + 6, &ver, 1, "save-version compare")) return false;
     if (!WriteCode(test, kXorAl, sizeof(kXorAl), "terrain-name guard")) return false;
@@ -372,7 +380,7 @@ extern "C" __declspec(dllexport) int TsmPluginStart(void)
     if (g_probe)
     {
         Logf("walking  probe: %-16s rva 0x%X immediate %.1f", "walk build batch",
-             RVA_WALK_LIMIT, *(const float*)(g_exeBase + RVA_WALK_LIMIT + 4));
+             RVA_WALK_LIMIT, *(const float*)(g_exeBase + RVA_WALK_LIMIT + sizeof(kWalkLimitOp)));
         for (int i = 0; i < (int)(sizeof(kSites) / sizeof(kSites[0])); i++)
             Logf("walking  probe: %-16s rva 0x%X -> 0x%X = %.1f", kSites[i].label,
                  kSites[i].rva, kSites[i].constRva,

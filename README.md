@@ -15,7 +15,7 @@ I'm pleased to present my custom loader for the game WRSR. It allows you to trul
 - Modifying road placement algorithms
 - And finally, even adding new mechanics and much, much more
 
-The mod will require manual installation: copy the folder to the game root directory, next to media_soviet. After that, open the folder and run the loader — tesmiolauncher.exe. Steam must also be running — the launcher simply runs the same SOVIET64.exe, injecting my tesmioloader.dll library, which contains the patching code.
+Extract the archive into the game directory. Put `tesmiolauncher.exe`, `tesmioloader.dll`, and the `vfs` folder beside `SOVIET64.exe`. Keep the directory structure inside `vfs` and start the game with `tesmiolauncher.exe`. Start Steam for the Steam edition or select **Non-Steam version** in the launcher for a standalone edition.
 The modification works on the principle of hooks — the executable binary is patched during the game's loading process. When launching the game normally through Steam, the unmodified version runs.
 
 The default version includes a set of the loader itself and two plugins for testing copper production chain (optional) - this is the resource and deposits plugin (resources.dll and deposits.dll) and the corresponding configuration files next to them.

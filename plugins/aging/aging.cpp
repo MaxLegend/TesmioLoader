@@ -66,14 +66,14 @@
 
 // std::vector<Person*> - begin, end. From docs/02-findings.md, and checked for
 // sanity before anything is dereferenced.
-#define RVA_PERSON_VECTOR 0x9E75B8
+#define RVA_PERSON_VECTOR 0xA31678  // v1.2.0.8; was 0x9E75B8
 
 // The world object is a pointer, not the object: 0x8F60 reads it as
 // `mov rsi,qword ptr [0x9941F0]`.
-#define RVA_WORLD_PTR     0x9941F0
+#define RVA_WORLD_PTR     0x9DDC88  // v1.2.0.8; was 0x9941F0
 
-#define OFF_DAY           0x590   // int, day of the year
-#define OFF_YEAR          0x594   // int
+#define OFF_DAY           0x5B8  // v1.2.0.8; was 0x590. int, day of the year
+#define OFF_YEAR          0x5BC  // v1.2.0.8; was 0x594. int
 
 // operator new(0x750) in the constructor at 0x823290.
 #define PERSON_SIZE       0x750

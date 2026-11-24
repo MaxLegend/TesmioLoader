@@ -1,0 +1,7 @@
+#pragma once
+
+#ifdef TSM_RELEASE_VERSION
+#define TSM_STRINGIFY_IMPL(value) #value
+#define TSM_STRINGIFY(value) TSM_STRINGIFY_IMPL(value)
+#define TSM_RELEASE_VERSION_TEXT TSM_STRINGIFY(TSM_RELEASE_VERSION)
+#endif

@@ -12,7 +12,7 @@
 - 修改道路铺设算法
 - 乃至添加全新机制，以及更多更多可能
 
-该模组需手动安装：请将文件夹复制到游戏根目录，与media_soviet文件夹并列。然后打开该文件夹并运行启动器——tesmiolauncher.exe。同时请确保已启动Steam，该启动器会调用原版的SOVIET64.exe，并注入我的tesmioloader.dll库文件，其中包含了补丁代码。
+请将压缩包解压到游戏根目录。`tesmiolauncher.exe`、`tesmioloader.dll` 和 `vfs` 文件夹应与 `SOVIET64.exe` 放在同一目录下。保留 `vfs` 内的目录结构，通过 `tesmiolauncher.exe` 启动游戏。Steam 版需要运行 Steam，独立发行版可在启动器中勾选 **Non-Steam version**。
 该加载器基于钩子（Hook）原理实现——在游戏加载过程中对可执行文件进行补丁注入。若通过 Steam 正常启动游戏，运行的则是未修改的原版程序。
 
 默认包含加载器本身及两个用于测试铜生产链的插件（可选）——即资源与矿脉插件（resources.dll 和 deposits.dll），以及与之配套的配置文件。

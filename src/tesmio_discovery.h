@@ -55,6 +55,7 @@ struct PluginFile
     std::wstring path;
     std::wstring file;
     std::wstring key;
+    std::wstring targetVersion;
 
     std::wstring IniPath() const { return path.substr(0, path.size() - 4) + L".ini"; }
 };
@@ -66,7 +67,7 @@ class PeExports
 public:
     PeExports(const BYTE* data, size_t size) : data_(data), size_(size) {}
 
-    bool IsPlugin()
+    bool IsPlugin(char (&targetVersion)[32])
     {
         const auto* dos = At<IMAGE_DOS_HEADER>(0);
         if (!dos || dos->e_magic != IMAGE_DOS_SIGNATURE || dos->e_lfanew < 0) return false;
@@ -93,17 +94,48 @@ public:
         if (!names || !ordinals || !functions) return false;
 
         bool version = false, init = false;
+        DWORD targetRva = 0;
         for (DWORD i = 0; i < exp->NumberOfNames; ++i)
         {
             if (ordinals[i] >= exp->NumberOfFunctions || !functions[ordinals[i]]) continue;
             if (Matches(names[i], TSM_EXPORT_APIVERSION)) version = true;
-            if (Matches(names[i], TSM_EXPORT_INIT)) init = true;
-            if (version && init) return true;
+            else if (Matches(names[i], TSM_EXPORT_INIT)) init = true;
+            else if (Matches(names[i], "TsmPluginTargetVersion")) targetRva = functions[ordinals[i]];
+            if (version && init && targetRva) break;
         }
-        return false;
+        if (version && init && targetRva &&
+            !(targetRva >= dir.VirtualAddress && targetRva - dir.VirtualAddress < dir.Size))
+            ReadTargetVersion(targetRva, targetVersion);
+        return version && init;
     }
 
 private:
+    void ReadTargetVersion(DWORD rva, char (&out)[32]) const
+    {
+        int dots = 0;
+        bool hasDigit = false;
+        for (size_t i = 0; i < sizeof(out); ++i)
+        {
+            const char* data = FromRva<char>(rva, i + 1);
+            if (!data) return;
+            const char ch = data[i];
+            if (ch == '\0')
+            {
+                if (dots == 2 && hasDigit) memcpy(out, data, i + 1);
+                return;
+            }
+            if (ch >= '0' && ch <= '9')
+                hasDigit = true;
+            else if (ch == '.' && hasDigit && dots < 2)
+            {
+                ++dots;
+                hasDigit = false;
+            }
+            else
+                return;
+        }
+    }
+
     template<class T> const T* At(size_t offset, size_t count = 1) const
     {
         if (offset > size_ || count > (size_ - offset) / sizeof(T)) return nullptr;
@@ -137,8 +169,9 @@ private:
     WORD sectionCount_ = 0;
 };
 
-inline bool HasPluginExports(const wchar_t* path)
+inline bool ReadPluginExports(const wchar_t* path, char (&targetVersion)[32])
 {
+    targetVersion[0] = '\0';
     HANDLE file = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_DELETE,
                               nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (file == INVALID_HANDLE_VALUE) return false;
@@ -151,7 +184,7 @@ inline bool HasPluginExports(const wchar_t* path)
     CloseHandle(mapping);
     if (!bytes) return false;
     bool plugin = false;
-    __try { plugin = PeExports(bytes, static_cast<size_t>(size.QuadPart)).IsPlugin(); }
+    __try { plugin = PeExports(bytes, static_cast<size_t>(size.QuadPart)).IsPlugin(targetVersion); }
     __except (EXCEPTION_EXECUTE_HANDLER) { plugin = false; }
     UnmapViewOfFile(bytes);
     return plugin;
@@ -182,8 +215,10 @@ inline void ScanDirectory(const std::wstring& root, bool recursive,
             const wchar_t* dot = wcsrchr(name, L'.');
             if (!dot || dot == name || _wcsicmp(dot, L".dll") != 0) continue;
             auto path = JoinPath(dir, name);
-            if (HasPluginExports(path.c_str()))
-                plugins.push_back({std::move(path), name, std::wstring(name, dot)});
+            char targetVersion[32];
+            if (ReadPluginExports(path.c_str(), targetVersion))
+                plugins.push_back({std::move(path), name, std::wstring(name, dot),
+                                   std::wstring(targetVersion, targetVersion + strlen(targetVersion))});
         } while (FindNextFileW(find, &entry));
         FindClose(find);
     }

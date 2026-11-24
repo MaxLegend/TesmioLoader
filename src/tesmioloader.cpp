@@ -152,7 +152,7 @@ static bool VfsResolveW(const wchar_t* path, wchar_t* out, size_t n)
     rel[i] = 0;
 
     wchar_t rootW[MAX_PATH];
-    MultiByteToWideChar(CP_UTF8, 0, g_vfsRoot, -1, rootW, MAX_PATH);
+    if (!MultiByteToWideChar(CP_ACP, 0, g_vfsRoot, -1, rootW, MAX_PATH)) return false;
     if (_snwprintf_s(out, n, _TRUNCATE, L"%s\\%s", rootW, rel) < 0) return false;
 
     DWORD a = GetFileAttributesW(out);
@@ -602,7 +602,7 @@ static HANDLE WINAPI h_CreateFile2(LPCWSTR path, DWORD access, DWORD share,
 //   [20] +0xA0  TextureAccesGetTexel(x, y) -> colour
 //   [23] +0xB8  TextureAccesSetTexel(x, y, colour)
 //   [36] +0x120 SaveToDDS          - how depletion survives a save
-#define TEX_VTABLE_RVA   0x187BF0   // C3DDLL64.dll rva - the 2026-11-11 engine
+#define TEX_VTABLE_RVA   0x188C58  // v1.2.0.8; was 0x187BF0. C3DDLL64.dll export RVA
                                     // update changed 34 bytes of timestamps
                                     // only; v1.1.1.13: unchanged, verified by
                                     // a byte-for-byte section diff
@@ -1902,7 +1902,7 @@ static void NoteSaveOpenW(const wchar_t* path, bool writing)
 //
 // The suffix is appended to the format string rather than printed separately,
 // so the game does the drawing and the line stays one string with one layout.
-#define P_MENU_VERSION_SITE 0x28B54C  // v1.1.1.13; was 0x28B5CC. LEA RAX,[rip+disp32] - the format argument
+#define P_MENU_VERSION_SITE 0x2A70FC  // v1.2.0.8; was 0x28B54C. LEA RAX,[rip+disp32] - the format argument
 #define MENU_LEA_LEN        7
 
 static const BYTE kMenuLeaOrig[3] = { 0x48, 0x8D, 0x05 };   // lea rax,[rip+disp32]
@@ -2008,16 +2008,15 @@ static HANDLE OpenLog(const char* name)
                        NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
 }
 
-// g_baseDir is "<...>\tesmioloader\build" (the folder tesmioloader.dll lives
-// in) when run from a source checkout, or wherever a distributed copy was
-// unpacked to otherwise. The checked-in assets live in "<...>\tesmioloader\vfs",
-// one level up from build\ - so a vfs folder is looked for there first, and
-// only a plain "vfs" folder beside the dll itself (baseDir\vfs) is used as the
-// fallback, for a distribution that ships build\ on its own with vfs inside
-// it. No link of any kind is required between the two; whichever one exists
-// is read directly, so there is nothing to fall out of sync.
+// A release ships vfs beside the DLL. A source checkout keeps it one level
+// above build\, so keep that layout as a fallback.
 static void ResolveVfsRoot()
 {
+    _snprintf_s(g_vfsRoot, sizeof(g_vfsRoot), _TRUNCATE, "%s\\vfs", g_baseDir);
+    DWORD attr = GetFileAttributesA(g_vfsRoot);
+    if (attr != INVALID_FILE_ATTRIBUTES && (attr & FILE_ATTRIBUTE_DIRECTORY))
+        return;
+
     char parent[MAX_PATH];
     _snprintf_s(parent, sizeof(parent), _TRUNCATE, "%s", g_baseDir);
     char* slash = strrchr(parent, '\\');
@@ -2026,14 +2025,12 @@ static void ResolveVfsRoot()
         *slash = 0;
         char sibling[MAX_PATH];
         _snprintf_s(sibling, sizeof(sibling), _TRUNCATE, "%s\\vfs", parent);
-        DWORD attr = GetFileAttributesA(sibling);
+        attr = GetFileAttributesA(sibling);
         if (attr != INVALID_FILE_ATTRIBUTES && (attr & FILE_ATTRIBUTE_DIRECTORY))
         {
             _snprintf_s(g_vfsRoot, sizeof(g_vfsRoot), _TRUNCATE, "%s", sibling);
-            return;
         }
     }
-    _snprintf_s(g_vfsRoot, sizeof(g_vfsRoot), _TRUNCATE, "%s\\vfs", g_baseDir);
 }
 
 static void Init()

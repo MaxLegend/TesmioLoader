@@ -98,7 +98,7 @@ for /d %%P in (plugins\*) do (
         echo [build] plugins\buildings: skipped, parked - see build.bat
     ) else if exist "%%P\%%~nxP.cpp" (
         echo [build] plugins\%%~nxP.dll
-        cl /nologo /O2 /MT /W3 /EHsc /LD ^
+        cl /nologo /O2 /MT /W3 /EHsc /LD "/DTSM_RELEASE_VERSION=%TSM_RELEASE_VERSION%" ^
            /Fo"build\plugins\\" /Fd"build\plugins\\" /Fe"build\plugins\%%~nxP.dll" ^
            "%%P\%%~nxP.cpp" /link kernel32.lib
         if errorlevel 1 ( echo [build] plugins\%%~nxP.dll FAILED & exit /b 1 )
@@ -134,4 +134,12 @@ if not exist build\tesmioloader.ini (
     echo [build] build\tesmioloader.ini kept - delete it to take the repo defaults
 )
 echo [build] ok -^> build\tesmiolauncher.exe
+
+if /i "%~1"=="--package" (
+    tar.exe -a -cf "build\tesmioloader-%TSM_RELEASE_VERSION%.zip" ^
+        -C "%~dp0build" tesmiolauncher.exe tesmioloader.dll ^
+        -C "%~dp0." tesmioloader.ini vfs LICENSE
+    if errorlevel 1 ( echo [package] ZIP creation failed & exit /b 1 )
+    echo [package] ok -^> build\tesmioloader-%TSM_RELEASE_VERSION%.zip
+)
 endlocal

@@ -75,24 +75,24 @@ static const TsmDepositApi* D;
 
 // ---------------------------------------------------------------- the game
 
-#define P_MINE_TICK_RVA   0x1B3680  // v1.1.1.13; was 0x1B3700. One mine, one tick
-#define P_DEPOSIT_RADIUS  0x1DCA60  // v1.1.1.13; was 0x1DCAE0. FUN_1401dca70 -
+#define P_MINE_TICK_RVA   0x1CC650    // v1.2.0.8; was 0x1B3680. One mine, one tick
+#define P_DEPOSIT_RADIUS  0x1F7510    // v1.2.0.8; was 0x1DCA60. FUN_1401dca70 -
                                      // deposit type -> search radius. A leaf
                                      // function with no .pdata entry of its own -
                                      // confirmed by disassembly: the previous
                                      // function's `ret`+`int3` sit immediately
                                      // before it, the next function's prologue
                                      // immediately after
-#define P_GAMEOBJ         0x9941F0   // the pointer to the main game object
-#define P_TIMER_OBJ       0x9D4EE0   // the C3D_TIMER the whole simulation steps on
+#define P_GAMEOBJ         0x9DDC88     // v1.2.0.8; was 0x9941F0. the pointer to the main game object
+#define P_TIMER_OBJ       0xA1EEF0     // v1.2.0.8; was 0x9D4EE0. the C3D_TIMER the whole simulation steps on
 // The .rdata literal pool moved by a uniform -0x18 in v1.1.1.9 - every constant
 // below was confirmed by its VALUE at the new address, not by the offset.
-#define P_TIMER_STEP      0x909B04  // v1.1.1.13; was 0x909AFC.  0.001f, the argument every PowerTime call passes
-#define P_PROD_PERIOD     0x90AA88  // v1.1.1.13; was 0x90AA78.  60.0f, what the rate is divided by per tick
+#define P_TIMER_STEP      0x950FB0    // v1.2.0.8; was 0x909B04. 0.001f, the argument every PowerTime call passes
+#define P_PROD_PERIOD     0x951FAC    // v1.2.0.8; was 0x90AA88. 60.0f, what the rate is divided by per tick
 
-#define P_MAP1_OFF        0xF00      // gameobj -> resourcemap
-#define P_MAP2_OFF        0xF08      // gameobj -> resourcemap2
-#define P_TERRAIN_OFF     0xED8      // gameobj -> C3D_TERRAIN
+#define P_MAP1_OFF        0xFA0      // v1.2.0.8; was 0xF00. gameobj -> resourcemap
+#define P_MAP2_OFF        0xFA8      // v1.2.0.8; was 0xF08. gameobj -> resourcemap2
+#define P_TERRAIN_OFF     0xF78      // v1.2.0.8; was 0xED8. gameobj -> C3D_TERRAIN
 #define P_TERRAIN_MASK    0x158      // C3D_TERRAIN -> its mask texture
                                      // Read off the type-3 case at 0x1DD910:
                                      //   mov r9,[rcx+0x158] / call the sampler
@@ -103,8 +103,8 @@ static const TsmDepositApi* D;
 #define B_PRODRATE        0xDDC      // production rate this tick
 #define B_QUALITY         0xDF8      // quality of source, 0..1
 
-#define T_BUILDING_TYPE   0x360      // typedesc -> building type; 7 is a mine
-#define T_DEPOSIT_TYPE    0x368      // typedesc -> deposit type
+#define T_BUILDING_TYPE   0x368      // v1.2.0.8; was 0x360. typedesc -> building type; 7 is a mine
+#define T_DEPOSIT_TYPE    0x370      // v1.2.0.8; was 0x368. typedesc -> deposit type
 
 #define TEX_SLOT_OPEN     16         // vtbl+0x80  TextureAccessOpen
 #define TEX_SLOT_CLOSE    18         // vtbl+0x90  TextureAccessClose
@@ -133,13 +133,13 @@ static const TsmDepositApi* D;
 // so a post-hook can read where the game stopped, draw one more row there, and
 // write the new bottom back - which is what makes the window grow by exactly
 // one line instead of the text landing on the frame.
-#define P_MINE_PANEL_RVA  0x786D80  // v1.1.1.13; was 0x786BE0
-#define P_FONTMANAGER     0x996FB0   // C3D_FONTMANAGER, by address
-#define P_PANEL_FONT      0x995220   // the C3D_FONT* the panel's rows use
-#define P_DPI             0x992088   // the scale every layout constant is multiplied by
-#define P_ROW_STEP        0x90A9DC  // v1.1.1.13; was 0x90A9CC.  35 - one row, and the x indent as well
-#define P_X_BACK          0x90A8DC  // v1.1.1.13; was 0x90A8CC.  15
-#define P_X_INDENT        0x90ABA8  // v1.1.1.13; was 0x90AB98.  110
+#define P_MINE_PANEL_RVA  0x7C3D40    // v1.2.0.8; was 0x786D80
+#define P_FONTMANAGER     0x9E0FC0     // v1.2.0.8; was 0x996FB0. C3D_FONTMANAGER, by address
+#define P_PANEL_FONT      0x9DF338     // v1.2.0.8; was 0x995220. the C3D_FONT* the panel's rows use
+#define P_DPI             0x9DC08C     // v1.2.0.8; was 0x992088. the scale every layout constant is multiplied by
+#define P_ROW_STEP        0x951F00    // v1.2.0.8; was 0x90A9DC. 35 - one row, and the x indent as well
+#define P_X_BACK          0x951DFC    // v1.2.0.8; was 0x90A8DC. 15
+#define P_X_INDENT        0x9520D0    // v1.2.0.8; was 0x90ABA8. 110
 #define W_BUILDING        0x240      // window -> the building it is about
 #define W_BOTTOM          0x250      // window -> the running Y, written at the end
 #define W_HIDDEN          0x01       // non-zero while the panel is not drawn

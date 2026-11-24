@@ -30,6 +30,12 @@
 #include <intrin.h>
 
 #include "tesmio_api.h"
+#include "tesmio_release.h"
+
+#ifdef TSM_RELEASE_VERSION_TEXT
+// The launcher's PE scan reads this data export without loading the DLL.
+extern "C" __declspec(dllexport) const char TsmPluginTargetVersion[] = TSM_RELEASE_VERSION_TEXT;
+#endif
 
 #define DLL_ENGINE "C3DDLL64.dll"
 #define DLL_STDIO  "api-ms-win-crt-stdio-l1-1-0.dll"

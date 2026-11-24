@@ -132,16 +132,10 @@ winner is the only one that leaves a trace once the game is up.
 
 ### The version gate
 
-Every address in this project belongs to **v1.1.1.9**, PE `TimeDateStamp`
-`0x6A3EB6AD` (2026-06-26) — the build the regular branch updated to on
-2026-08-11, from v1.1.1.7 (`0x69C4098C`). The update's own notes called it
-content-only; it was not, at the byte level — see *Porting off v1.1.1.7*
-below — and every address in this project was re-derived against the new
-build rather than kept as a second table entry. A patch site verifies its own
-bytes and refuses on a mismatch, so a future update makes each hook decline
-rather than corrupt the process — but that is a dozen separate refusals in a
-log file nobody reads, after the game is already running. The launcher asks
-once, before the process exists, and refuses to inject at all.
+The current port targets **v1.2.0.8**, PE `TimeDateStamp` `0x6B0097B2`.
+The launcher checks the build before starting the game. Hook sites also
+check the bytes they expect before patching. The current address and layout
+changes are recorded in [the port notes](19-port-v1.2.0.8.md).
 
 **`SOVIET64.exe` has no `VERSIONINFO` resource** — `FileVersion` is `0.0.0.0` —
 so there is nothing to ask the shell. The version is read out of the only place
@@ -171,7 +165,7 @@ than a bare pair of constants, checked in full:
 | match the entry | matches its stamp | supported |
 | match the entry | differs from its stamp | supported, *"a different build of it"* — a hotfix that left the printed version alone. Allowed, and said out loud |
 | match nothing | — | **refused** |
-| unreadable | matches the stamp | supported — the stamp is the stronger fact and this exe is byte-identical to the one it names |
+| unreadable | matches the stamp | supported. The launcher displays the version listed for that stamp |
 | unreadable | does not match | **refused** |
 
 Both facts are shown in the window and printed by `--find`, which exits `2` when
@@ -339,7 +333,7 @@ the length of one call; see [10-accumulator.md](10-accumulator.md).
 
 ### Virtual table
 
-`C3DAPI_D3D11_TEXTURE` vtable at `C3DDLL64.dll` rva `0x187BF0`, slots 2
+`C3DAPI_D3D11_TEXTURE` vtable at `C3DDLL64.dll` RVA `0x188C58`, slots 2
 (`Load2DFromFile`) and 20 (`TextureAccesGetTexel`). Load identifies which
 texture object is which file; GetTexel observes deposit sampling.
 
@@ -347,9 +341,13 @@ texture object is which file; GetTexel observes deposit sampling.
 
 ### Virtual file system
 
-Any read whose path resolves under `tesmioloader/vfs/<same relative path>` is
-served from there instead. Absolute paths are refused deliberately — the game
-uses them for Workshop content, and redirecting those has never been wanted.
+The loader looks for `vfs/` beside `tesmioloader.dll` first. If that directory is
+missing, it checks one directory higher for the source checkout layout.
+Relative game reads can resolve under the selected `vfs/<same relative path>`.
+Absolute paths, including the game's Workshop paths, bypass the VFS.
+
+`build.bat --package` creates a ZIP with the launcher, loader DLL, release INI
+and `vfs/` at its root. Extract them beside `SOVIET64.exe`.
 
 This is how mod resources get icons and cargo models, and how a terrain's
 deposit map is replaced without touching the shipped file.
@@ -444,7 +442,7 @@ everything a feature needs lives in that plugin's own ini.
 | `plugins` | scan `plugins\` and load what is there |
 | `menu_patch` | append `menu_tag` to the main menu's version line |
 | `version` | this build's version, shown in the launcher's title bar |
-| `version_check` | **launcher only.** 0 injects into a game that is not v1.1.1.9. Absent means 1 |
+| `version_check` | **launcher only.** 0 bypasses the build gate. Absent means 1 |
 
 `menu_tag` also lives in this section, but it is not a setting: tesmiolauncher's
 SaveConfig derives it from `version` (`"tesmioloader v. " + version`) and

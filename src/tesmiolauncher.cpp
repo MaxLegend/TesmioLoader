@@ -71,6 +71,7 @@
 #include <string.h>
 
 #include "tesmio_discovery.h"
+#include "tesmio_release.h"
 #include "tesmio_ini_editor.h"
 
 // The signature check. The format and the CNG primitives live in
@@ -149,10 +150,7 @@ struct SupportedGameVersion
 };
 
 static const SupportedGameVersion kSupportedVersions[] = {
-    // v1.1.1.13; was { 1, 1, 1, 9 }, 0x6A3EB6ADu (2026-06-26 17:28:13 UTC).
-    // The 2026-11-11 update; every hard-coded address in the tree was
-    // re-derived against it - see docs/17-port-v1.1.1.9.md, *The port*.
-    { { 1, 1, 1, 13 }, 0x6A8D4087u, L"1.1.1.13" },  // 2026-08-25 07:13:11 UTC
+    { { 1, 2, 0, 8 }, 0x6B0097B2u, L"1.2.0.8" },  // 2026-11-20 18:55:46 UTC
 };
 #define GAME_VER_COUNT (sizeof(kSupportedVersions) / sizeof(kSupportedVersions[0]))
 
@@ -699,7 +697,11 @@ static void ReadGameVersion(const wchar_t* exe, GameVersion* g)
             g->v[2] == sv->v[2] && g->v[3] == sv->v[3])
             byNumbers = (int)i;
         if (g->stamp == sv->stamp)
+        {
             stampKnown = true;
+            if (!g->known)
+                wcscpy_s(g->text, sv->text);
+        }
     }
 
     if (byNumbers >= 0)
@@ -881,7 +883,6 @@ static int CheckPluginSignature(const wchar_t* dllPath)
 static int CheckPluginSignature(const wchar_t*) { return TSM_SIG_NONE; }
 #endif
 
-// Empty when the plugin's own reported version is one this loader accepts.
 // The provenance half of a plugin's label, and only a valid seal is stated.
 //
 // A plugin with no .sig gets NOTHING - no mark at all. It used to say "not from
@@ -908,9 +909,18 @@ static void PluginSigNote(const PluginEntry* e, wchar_t* out, size_t n, bool bri
 #endif
 }
 
-// Everything the window and --find have to say about a plugin, in one string:
-// whose signature it carries, then whether this loader will initialise it.
-// Can come back empty, and both callers then print the bare file name.
+static constexpr wchar_t kLoaderRelease[] = L"" TSM_RELEASE_VERSION_TEXT;
+
+static std::wstring PluginVersionWarning(const PluginEntry& entry, bool brief)
+{
+    const auto& target = entry.file.targetVersion;
+    if (target.empty())
+        return brief ? L"[target unknown]" : L"WARNING: target loader version unknown";
+    if (target == kLoaderRelease) return {};
+    if (brief) return L"[for " + target + L"]";
+    return L"WARNING: targets loader " + target + L", current release " + kLoaderRelease;
+}
+
 static std::wstring EffectiveWorkshop()
 {
     return g_workshopOverride.empty() ? g_workshopDefault : g_workshopOverride;
@@ -939,9 +949,6 @@ static void ScanPlugins()
     }
 }
 
-#define TSM_STRINGIFY_IMPL(value) #value
-#define TSM_STRINGIFY(value) TSM_STRINGIFY_IMPL(value)
-
 static bool CreateDefaultConfig()
 {
     HANDLE file = CreateFileW(g_ini, GENERIC_WRITE, 0, NULL, CREATE_NEW,
@@ -950,7 +957,7 @@ static bool CreateDefaultConfig()
         return GetLastError() == ERROR_FILE_EXISTS && Exists(g_ini);
     constexpr char defaults[] =
         "[tesmioloader]\r\n"
-        "version = " TSM_STRINGIFY(TSM_RELEASE_VERSION) "\r\n"
+        "version = " TSM_RELEASE_VERSION_TEXT "\r\n"
         "version_check = 1\r\n"
         "non_steam = 0\r\n"
         "plugins = 1\r\n"
@@ -1092,6 +1099,7 @@ static bool Inject(const wchar_t* gameFull, const wchar_t* dllFull)
 #define IDC_PLUGIN 109
 #define IDC_PLUGIN_INI 110
 #define IDC_NON_STEAM 111
+#define IDC_PLUGIN_VERSION 112
 
 #define LIST_CLASS  L"tesmiopluginlist"
 #define LIST_ROW    24              // one plugin row, 96 dpi
@@ -1273,6 +1281,11 @@ static void PopulatePluginList()
     const int gearGap = S(4);
     HDC dc = GetDC(g_list);
     HGDIOBJ oldFont = dc && g_font ? SelectObject(dc, g_font) : nullptr;
+    const auto textWidth = [dc](const std::wstring& text) {
+        RECT bounds = {};
+        if (dc) DrawTextW(dc, text.c_str(), -1, &bounds, DT_SINGLELINE | DT_CALCRECT);
+        return bounds.right;
+    };
     for (size_t i = 0; i < g_plug.size(); ++i)
     {
         auto& entry = g_plug[i];
@@ -1284,10 +1297,13 @@ static void PopulatePluginList()
         const int x = static_cast<int>(i % LIST_COLS) * colWidth;
         const int y = static_cast<int>(i / LIST_COLS) * S(LIST_ROW);
         const bool hasIni = Exists(entry.file.IniPath().c_str());
-        const int available = colWidth - S(8) - (hasIni ? gearWidth + gearGap : 0);
-        RECT labelBounds = {};
-        if (dc) DrawTextW(dc, label.c_str(), -1, &labelBounds, DT_SINGLELINE | DT_CALCRECT);
-        const int labelWidth = labelBounds.right + S(17);
+        const int gearSpace = hasIni ? gearWidth + gearGap : 0;
+        const auto warning = PluginVersionWarning(entry, true);
+        const int warningWidth = warning.empty() ? 0 :
+            (std::min)(colWidth / 2, dc ? static_cast<int>(textWidth(warning)) + S(4) : S(112));
+        const int warningSpace = warningWidth ? warningWidth + gearGap : 0;
+        const int available = colWidth - S(8) - gearSpace - warningSpace;
+        const int labelWidth = textWidth(label) + S(17);
         const int checkWidth = dc && labelWidth < available ? labelWidth : available;
         entry.box = ChildPx(g_list, L"BUTTON", label.c_str(),
                             BS_AUTOCHECKBOX | BS_NOTIFY | WS_TABSTOP,
@@ -1302,6 +1318,9 @@ static void PopulatePluginList()
                                     gearWidth, S(21), IDC_PLUGIN_INI);
             SetWindowLongPtrW(settings, GWLP_USERDATA, static_cast<LONG_PTR>(i));
         }
+        if (warningWidth)
+            ChildPx(g_list, L"STATIC", warning.c_str(), SS_CENTERIMAGE | SS_ENDELLIPSIS | SS_NOPREFIX,
+                    x + checkWidth + gearSpace + gearGap, y, warningWidth, S(21), IDC_PLUGIN_VERSION);
     }
     if (oldFont) SelectObject(dc, oldFont);
     if (dc) ReleaseDC(g_list, dc);
@@ -1459,13 +1478,13 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
             return (LRESULT)GetSysColorBrush(COLOR_BTNFACE);
         }
 
-        // A plugin box whose own reported API version this loader does not
-        // accept is painted red rather than only carrying a bracketed suffix
-        // in its label - the loader will refuse to initialise it exactly as
-        // if it were unchecked, so the box lies about what ticking it does
-        // unless the mismatch is obvious at a glance. A signature file that
-        // does not verify gets the same red: the bytes changed after they
-        // were signed, which is a stronger statement than "not from Tesmio".
+        if (GetDlgCtrlID(ctl) == IDC_PLUGIN_VERSION)
+        {
+            SetTextColor((HDC)wp, RGB(144, 75, 0));
+            return (LRESULT)GetSysColorBrush(COLOR_BTNFACE);
+        }
+
+        // A signature that fails verification is highlighted separately.
         for (size_t i = 0; i < g_plug.size(); i++)
         {
             if (g_plug[i].box == ctl &&
@@ -1985,8 +2004,9 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
         {
             wchar_t note[96];
             PluginSigNote(&entry, note, _countof(note), false);
-            Msg(L"plugin %-3s %s %s", entry.on ? L"on" : L"off",
-                entry.file.path.c_str(), note);
+            const auto warning = PluginVersionWarning(entry, false);
+            Msg(L"plugin %-3s %s %s%s%s", entry.on ? L"on" : L"off",
+                entry.file.path.c_str(), note, warning.empty() ? L"" : L"  ", warning.c_str());
         }
         // GameVersionOf prints what it read; this says what was wanted.
         for (size_t i = 0; i < GAME_VER_COUNT; i++)

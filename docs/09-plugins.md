@@ -203,6 +203,17 @@ if (const char* s = D->setting(i, "deplete")) tonnes = (float)atof(s);
 
 ## Versioning
 
+The launcher also checks the plugin's target TesmioLoader release. Project
+builds export `TsmPluginTargetVersion` as a NUL-terminated ASCII version
+string. The launcher reads that export from the DLL file and highlights a
+different or unknown target in the plugin list. `--find` prints the same
+warning. Loading permissions still follow the runtime API check below.
+
+Standalone builds that use `tesmio_plugin.h` can pass
+`/DTSM_RELEASE_VERSION=0.4.5` to record their target release. Plugins that
+use the API header directly can export the same string as
+`extern "C" __declspec(dllexport) const char TsmPluginTargetVersion[]`.
+
 Two numbers, and the second one is a promise.
 
 | Constant | What | Now |
